@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WaferMap AI | Fast Vision Edge</title>
-    <!-- Modern Typography: Outfit & Inter -->
+    <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <!-- Main StyleSheet -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -36,61 +35,87 @@
         <p class="status-text" id="apiStatusDisplay">Not Configured</p>
     </div>
 
-    <main class="container">
-        <header class="hero">
-            <h1>Automated Defect <span class="gradient-text">Classification</span></h1>
-            <p>Upload a Wafer Map image to instantly run EfficientNet-B0 inference, visualize Grad-CAM localization heatmaps, and assess yield risk globally via edge endpoints.</p>
-        </header>
-
-        <section class="dashboard">
-            <div class="upload-zone glass-panel" id="dropZone">
-                <div class="upload-content">
-                    <div class="upload-icon">📤</div>
-                    <h2>Drag & Drop Wafer Image</h2>
-                    <p>or click to browse (.png, .jpg)</p>
-                    <input type="file" id="fileInput" accept="image/png, image/jpeg" class="hidden" />
-                    <button class="btn btn-secondary mt-1" onclick="document.getElementById('fileInput').click()">Select File</button>
-                </div>
-                <div class="preview hidden" id="previewContainer">
-                    <img id="imagePreview" src="" alt="Image Preview">
-                    <button class="btn btn-secondary mt-1" id="resetBtn">Change Image</button>
-                    <button class="btn btn-primary mt-1" id="runInferenceBtn">✨ Request AI Inference</button>
-                </div>
-            </div>
-
-            <div class="results-zone hidden" id="resultsZone">
-                <div class="loading-overlay hidden" id="loadingState">
-                    <div class="spinner"></div>
-                    <p>Analyzing spatial signatures...</p>
+    <!-- MAIN TWO COLUMN LAYOUT -->
+    <main class="app-container">
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar glass-panel">
+            <div class="sidebar-content">
+                <div class="sidebar-section">
+                    <h3>About WaferMap AI</h3>
+                    <p>This system utilizes an <strong>EfficientNet-B0</strong> model trained on the WM-811K dataset to automatically classify semiconductor wafer maps into 9 distinct defect categories.</p>
+                    <p>It also features <strong>Grad-CAM</strong> spatial localization to highlight exactly where the AI detects anomalies, aiding root-cause analysis.</p>
                 </div>
                 
-                <div class="prediction-cards">
-                    <div class="card glass-panel status-card" id="statusCard">
-                        <span class="card-label">Predicted Class</span>
-                        <h2 id="predictedClass">-</h2>
-                        <div class="confidence-bar-bg">
-                            <div class="confidence-bar-fill" id="confidenceFill" style="width: 0%"></div>
-                        </div>
-                        <span class="sub-text">Confidence: <span id="confidenceText">0</span>%</span>
+                <hr class="divider" />
+                
+                <div class="sidebar-section">
+                    <h3>Sample Database</h3>
+                    <p>Select a sample from the WM-811K dataset below to run a direct inference test, or use the drag-and-drop tool for custom maps.</p>
+                    <div class="sample-grid" id="sampleGrid">
+                        <!-- Thumbnails injected by JS -->
                     </div>
+                </div>
+            </div>
+        </aside>
 
-                    <div class="card glass-panel">
-                        <span class="card-label">Yield Risk</span>
-                        <h2 id="riskScore">-</h2>
-                        <span class="sub-text">Action: <span style="font-weight:bold" id="actionText">-</span></span>
+        <!-- RIGHT MAIN DASHBOARD -->
+        <section class="main-dashboard">
+            <header class="hero">
+                <h1>Automated Defect <span class="gradient-text">Classification</span></h1>
+            </header>
+
+            <div class="dashboard">
+                <div class="upload-zone glass-panel" id="dropZone">
+                    <div class="upload-content">
+                        <div class="upload-icon">📤</div>
+                        <h2>Drag & Drop Wafer Image</h2>
+                        <p>or click to browse (.png, .jpg)</p>
+                        <input type="file" id="fileInput" accept="image/png, image/jpeg" style="display:none;" />
+                        <button class="btn btn-secondary mt-1" id="selectFileBtn">Select File</button>
+                    </div>
+                    <div class="preview hidden" id="previewContainer">
+                        <img id="imagePreview" src="" alt="Image Preview">
+                        <div class="button-row">
+                            <button class="btn btn-secondary" id="resetBtn">Change Image</button>
+                            <button class="btn btn-primary" id="runInferenceBtn">✨ Request AI Inference</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="visuals glass-panel mt-2">
-                    <h3 class="section-title">Grad-CAM Root Cause Localization</h3>
-                    <div class="heatmaps">
-                        <div class="image-box">
-                            <span class="tag">Original Input</span>
-                            <img id="resultOriginalImage" src="" alt="Original Image" />
+                <div class="results-zone hidden" id="resultsZone">
+                    <div class="loading-overlay hidden" id="loadingState">
+                        <div class="spinner"></div>
+                        <p>Analyzing spatial signatures...</p>
+                    </div>
+                    
+                    <div class="prediction-cards">
+                        <div class="card glass-panel status-card" id="statusCard">
+                            <span class="card-label">Predicted Class</span>
+                            <h2 id="predictedClass">-</h2>
+                            <div class="confidence-bar-bg">
+                                <div class="confidence-bar-fill" id="confidenceFill" style="width: 0%"></div>
+                            </div>
+                            <span class="sub-text">Confidence: <span id="confidenceText">0</span>%</span>
                         </div>
-                        <div class="image-box active">
-                            <span class="tag tag-glow">CAM Attention</span>
-                            <img id="resultCamImage" src="" alt="Grad-CAM Image" />
+
+                        <div class="card glass-panel status-card" id="actionCard">
+                            <span class="card-label">Yield Risk</span>
+                            <h2 id="riskScore">-</h2>
+                            <span class="sub-text">Action: <span style="font-weight:bold" id="actionText">-</span></span>
+                        </div>
+                    </div>
+
+                    <div class="visuals glass-panel mt-2">
+                        <h3 class="section-title">Grad-CAM Root Cause Localization</h3>
+                        <div class="heatmaps">
+                            <div class="image-box">
+                                <span class="tag">Original Input</span>
+                                <img id="resultOriginalImage" src="" alt="Original Image" />
+                            </div>
+                            <div class="image-box active">
+                                <span class="tag tag-glow">CAM Attention</span>
+                                <img id="resultCamImage" src="" alt="Grad-CAM Image" />
+                            </div>
                         </div>
                     </div>
                 </div>
