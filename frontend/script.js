@@ -164,20 +164,14 @@ document.addEventListener("DOMContentLoaded", () => {
              statusCard.classList.add("good");
         }
 
-        // Mock yield risk logic (since the API doesn't expose the risk score, we generate a mock or you can add risk score to the backend)
-        // Wait, calculate_risk_score is in src/risk_score.py. Since the frontend receives class & confidence, let's do a simple mapping here
-        // If the API had returned yield risk, we would use it!
-        let riskVal = 10;
-        let action = "MONITOR";
+        // Use real risk score & action from backend
+        let riskVal = data.risk_score !== undefined ? data.risk_score : 0;
+        let action = data.action || "MONITOR";
         let color = "var(--success)";
 
-        if(data.class === "Donut" || data.class === "Center") {
-            riskVal = 85; 
-            action = "STOP LOT";
+        if(action === "STOP LOT" || action === "STOP") {
             color = "var(--danger)";
-        } else if(data.class !== "none" && data.class !== "Normal") {
-            riskVal = 55;
-            action = "INVESTIGATE";
+        } else if(action === "INVESTIGATE") {
             color = "var(--warning)";
         }
 

@@ -38,5 +38,7 @@ async def predict(image: UploadFile = File(...)):
         "class": result["predicted_class"],
         "confidence": result["confidence"],
         "class_probabilities": result["class_probabilities"],
+        "risk_score": result["risk_score"],
+        "action": result["action"],
         "gradcam_png_base64": overlay_to_base64_png(result["gradcam_overlay"]),
     }

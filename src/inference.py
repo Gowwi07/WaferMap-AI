@@ -1,115 +1,124 @@
+"""
+src/inference.py
+================
+Inference utilities for the FastAPI backend (app.py).
+
+Loads the trained EfficientNet-B0 model, runs predictions,
+and generates Grad-CAM overlays compatible with the existing
+src/model.py and src/dataset.py conventions.
+"""
+
 from __future__ import annotations
 
 import base64
 import io
-import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
-from src.model import WaferNet
+from src.dataset import CLASS_NAMES, NUM_CLASSES, IMG_SIZE
+from src.model import build_model
+from src.gradcam import GradCAM, overlay_heatmap
+from src.risk_score import calculate_risk_score
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(ROOT_DIR, "models", "efficientnet_wafer.pth")
+
+# Transform must match what was used in training (dataset.py EVAL_TRANSFORM)
+EVAL_TRANSFORM = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
+])
 
 
 @dataclass
 class InferenceAssets:
-    model: WaferNet
-    labels: list[str]
+    model: torch.nn.Module
+    cam: GradCAM
     device: torch.device
     transform: transforms.Compose
 
 
-def load_assets(
-    model_path: str | Path = "artifacts/wafernet.pt",
-    labels_path: str | Path = "artifacts/labels.json",
-    img_size: int = 128,
-) -> InferenceAssets | None:
-    model_path = Path(model_path)
-    labels_path = Path(labels_path)
-    if not model_path.exists() or not labels_path.exists():
+def load_assets() -> InferenceAssets | None:
+    """Load the trained model + Grad-CAM once at startup."""
+    if not os.path.exists(MODEL_PATH):
+        print(f"[Inference] Model not found at {MODEL_PATH}")
         return None
 
-    labels = json.loads(labels_path.read_text(encoding="utf-8"))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = WaferNet(num_classes=len(labels)).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model = build_model(num_classes=NUM_CLASSES, pretrained=False).to(device)
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     model.eval()
-    tfm = transforms.Compose(
-        [
-            transforms.Grayscale(num_output_channels=1),
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5]),
-        ]
-    )
-    return InferenceAssets(model=model, labels=labels, device=device, transform=tfm)
+
+    # Target the last feature block for Grad-CAM
+    target_layer = model.features[-1]
+    cam = GradCAM(model, target_layer)
+
+    print(f"[Inference] Model loaded from {MODEL_PATH} on {device}")
+    return InferenceAssets(model=model, cam=cam, device=device, transform=EVAL_TRANSFORM)
 
 
-def overlay_heatmap(gray_img: np.ndarray, heatmap: np.ndarray, alpha: float = 0.45) -> np.ndarray:
-    gray_rgb = np.stack([gray_img, gray_img, gray_img], axis=-1)
-    cmap = plt.get_cmap("jet")
-    heat_rgb = cmap(heatmap)[..., :3]
-    blended = (1 - alpha) * gray_rgb + alpha * heat_rgb
-    return np.clip(blended, 0.0, 1.0)
+def unnormalize_image(tensor: torch.Tensor) -> np.ndarray:
+    """Convert a normalized image tensor back to 0-1 RGB numpy array (H, W, C)."""
+    mean = np.array([0.485, 0.456, 0.406]).reshape(3, 1, 1)
+    std = np.array([0.229, 0.224, 0.225]).reshape(3, 1, 1)
+    img = tensor.cpu().numpy()
+    img = (img * std) + mean
+    img = np.clip(img, 0, 1)
+    return np.transpose(img, (1, 2, 0))  # (C,H,W) -> (H,W,C)
 
 
 def run_inference_with_gradcam(assets: InferenceAssets, pil: Image.Image) -> dict:
-    x = assets.transform(pil).unsqueeze(0).to(assets.device)
+    """Run a single prediction with Grad-CAM and risk scoring."""
+    # Ensure RGB
+    pil = pil.convert("RGB")
+    img_tensor = assets.transform(pil)
+    img_batch = img_tensor.unsqueeze(0).to(assets.device)
 
-    activations = None
-    grads = None
+    # Grad-CAM inference
+    heatmap, output, pred_class_idx = assets.cam(img_batch)
 
-    def forward_hook(_module, _inp, out):
-        nonlocal activations
-        activations = out.detach()
+    probs = F.softmax(output, dim=1)[0].detach().cpu().numpy()
+    confidence = float(probs[pred_class_idx])
+    pred_class_name = CLASS_NAMES[pred_class_idx]
 
-    def backward_hook(_module, _gin, gout):
-        nonlocal grads
-        grads = gout[0].detach()
+    # Risk score
+    risk_score, action = calculate_risk_score(pred_class_name, confidence, heatmap)
 
-    last_conv = assets.model.features[6]
-    h1 = last_conv.register_forward_hook(forward_hook)
-    h2 = last_conv.register_full_backward_hook(backward_hook)
+    # Overlay
+    img_rgb = unnormalize_image(img_tensor)
+    gradcam_overlay = overlay_heatmap(img_rgb, heatmap)
 
-    logits = assets.model(x)
-    probs = torch.softmax(logits, dim=1).squeeze(0)
-    pred_idx = int(torch.argmax(probs).item())
-    score = logits[0, pred_idx]
-    assets.model.zero_grad(set_to_none=True)
-    score.backward()
+    class_probs = {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
 
-    h1.remove()
-    h2.remove()
-
-    if activations is None or grads is None:
-        raise RuntimeError("Failed to collect Grad-CAM hooks.")
-
-    weights = grads.mean(dim=(2, 3), keepdim=True)
-    cam = torch.relu((weights * activations).sum(dim=1, keepdim=True))
-    side = x.shape[-1]
-    cam = torch.nn.functional.interpolate(cam, size=(side, side), mode="bilinear", align_corners=False)
-    cam = cam.squeeze().cpu().numpy()
-    cam = cam - cam.min()
-    cam = cam / (cam.max() + 1e-8)
-
-    img_gray = np.array(pil.convert("L").resize((side, side)), dtype=np.float32) / 255.0
-    overlay = overlay_heatmap(img_gray, cam, alpha=0.45)
-
-    class_probs = {assets.labels[i]: float(probs[i].item()) for i in range(len(assets.labels))}
     return {
-        "predicted_class": assets.labels[pred_idx],
-        "confidence": float(probs[pred_idx].item()),
+        "predicted_class": pred_class_name,
+        "confidence": confidence,
         "class_probabilities": class_probs,
-        "gradcam_overlay": overlay,
+        "risk_score": risk_score,
+        "action": action,
+        "gradcam_overlay": gradcam_overlay,
     }
 
 
 def overlay_to_png_bytes(overlay: np.ndarray) -> bytes:
-    arr = (overlay * 255).astype(np.uint8)
+    """Convert an overlay numpy array to PNG bytes."""
+    if overlay.max() <= 1.0:
+        arr = (overlay * 255).astype(np.uint8)
+    else:
+        arr = overlay.astype(np.uint8)
+    # Convert BGR to RGB if needed (overlay_heatmap uses cv2 which is BGR)
+    if len(arr.shape) == 3 and arr.shape[2] == 3:
+        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
     im = Image.fromarray(arr)
     buf = io.BytesIO()
     im.save(buf, format="PNG")
@@ -117,4 +126,5 @@ def overlay_to_png_bytes(overlay: np.ndarray) -> bytes:
 
 
 def overlay_to_base64_png(overlay: np.ndarray) -> str:
+    """Convert an overlay numpy array to a base64-encoded PNG string."""
     return base64.b64encode(overlay_to_png_bytes(overlay)).decode("utf-8")
