@@ -51,6 +51,10 @@ body {
     width: 400px; height: 400px; background: radial-gradient(circle, rgba(231, 76, 60, 0.4) 0%, transparent 60%);
     top: 40%; left: 30%; animation-delay: -10s;
 }
+.bg-glass-overlay {
+    position: absolute; inset: 0; background: rgba(5,5,5,0.3);
+    backdrop-filter: blur(100px); -webkit-backdrop-filter: blur(100px); z-index: 1;
+}
 @keyframes float {
     0% { transform: translate(0, 0) scale(1); }
     100% { transform: translate(50px, 50px) scale(1.1); }
@@ -207,6 +211,35 @@ body {
 .eda-card { background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem; text-align: center; }
 .eda-card h4 { font-family: var(--font-heading); margin-bottom: 0.8rem; color: var(--text-primary); font-size: 1.1rem; }
 .eda-card img { width: 100%; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.8); }
+
+/* --- MOBILE RESPONSIVENESS --- */
+@media (max-width: 900px) {
+    .nav-content { padding: 0 1rem; }
+    .logo { font-size: 1.2rem; }
+    .config-modal { width: 90%; padding: 1.5rem; }
+    
+    .app-layout { flex-direction: column; overflow: hidden; }
+    
+    /* Move sidebar off-canvas for mobile */
+    .sidebar { position: absolute; left: 0; top: 0; height: 100%; z-index: 50; background: rgba(5,5,5,0.9); width: var(--sidebar-width); }
+    .sidebar.collapsed { transform: translateX(-100%); width: var(--sidebar-width); }
+    
+    /* Fix toggle button layout for mobile */
+    .sidebar-toggle { right: -40px; }
+    .sidebar.collapsed .sidebar-toggle { transform: rotate(180deg); right: -40px; }
+    .sidebar-inner { opacity: 1; pointer-events: all; }
+    .sidebar.collapsed .sidebar-inner { opacity: 0; pointer-events: none; }
+
+    .main-content { padding: 1.5rem 1rem; }
+    .content-panel { padding: 1.5rem; }
+    .content-panel h2 { font-size: 2rem; }
+    
+    .hero h1 { font-size: 2.2rem; }
+    .prediction-cards { grid-template-columns: 1fr; }
+    .heatmaps { grid-template-columns: 1fr; }
+    .button-row { flex-direction: column; }
+    .btn { width: 100%; }
+}
 
 @keyframes fadeUp {
     from { opacity: 0; transform: translateY(15px); }

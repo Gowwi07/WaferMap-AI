@@ -1,17 +1,13 @@
 """
 src/app.py
 ==========
-Phase 5 - Streamlit Web Dashboard
+Phase 5 - Hackathon Winning UI Upgrade
 
-This is the final piece of the WaferMapAI project. It provides an interactive
-UI for engineers to:
-1. Upload a raw wafer map image (or select a sample)
-2. Run the AI prediction (EfficientNet classification)
-3. View the Grad-CAM heatmap explanation
-4. See the Yield Risk Score and recommended action
-
-Run with:
-    streamlit run src/app.py
+This Streamlit app has been heavily customized with CSS to look like a modern
+Next.js/Vercel application. It features:
+1. A hidden default Streamlit menu/footer for a white-label SaaS look.
+2. A File Uploader supporting both raw images (.png, .jpg) and dataset .pkl arrays.
+3. Real-time inference, Grad-CAM overlays, and Yield Risk Score calculations.
 """
 
 import os, sys
@@ -23,6 +19,8 @@ import cv2
 import pandas as pd
 import time
 import matplotlib.pyplot as plt
+from PIL import Image
+import io
 
 # Add project root to path
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,37 +30,67 @@ from src.dataset import CLASS_NAMES, NUM_CLASSES, normalize_label, get_dataloade
 from src.model import build_model
 from src.gradcam import GradCAM, overlay_heatmap
 from src.risk_score import calculate_risk_score
+from torchvision import transforms
 
 st.set_page_config(
     page_title="WaferMap AI Dashboard",
-    page_icon="🖥️",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for UI aesthetics
+# --- PREMIUM VERCEL-STYLE CSS ---
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #1e1e2f;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        margin-bottom: 20px;
-        border-left: 5px solid #00d2ff;
-    }
-    .metric-value { font-size: 2.5rem; font-weight: bold; color: white; margin:0;}
-    .metric-label { font-size: 1.1rem; color: #a0aec0; text-transform: uppercase; letter-spacing: 1px; margin:0;}
-    .action-header { font-size: 1.5rem; font-weight: bold; margin-bottom: 5px;}
+    /* Hide Streamlit Default UI Elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
-    .status-monitor     { border-left-color: #2ecc71; }
-    .status-investigate { border-left-color: #f1c40f; }
-    .status-stop        { border-left-color: #e74c3c; }
+    /* Vercel-like sleek dark mode */
+    .stApp {
+        background-color: #000000;
+        color: #ededed;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* Metric Cards */
+    .metric-card {
+        background-color: #111111;
+        border: 1px solid #333333;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        margin-bottom: 20px;
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        border-color: #666;
+    }
+    
+    .metric-value { font-size: 2.5rem; font-weight: 700; color: #ffffff; margin:0;}
+    .metric-label { font-size: 0.875rem; color: #888888; text-transform: uppercase; letter-spacing: 1px; margin:0 0 8px 0;}
+    .action-header { font-size: 1.5rem; font-weight: 700; margin-bottom: 5px;}
+    
+    /* Status Colors */
+    .status-monitor     { border-top: 4px solid #2ecc71; }
+    .status-investigate { border-top: 4px solid #f1c40f; }
+    .status-stop        { border-top: 4px solid #e74c3c; }
+    
+    h1, h2, h3 { color: #ffffff; letter-spacing: -0.02em; }
+    
+    /* File uploader styling override */
+    .stFileUploader > div > div {
+        background-color: #111111 !important;
+        border: 1px dashed #333333 !important;
+        border-radius: 8px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading AI Engine...")
 def load_app_model():
     """Load model once and cache it in memory."""
     device = torch.device("cpu")
@@ -75,7 +103,6 @@ def load_app_model():
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     
-    # Initialize Grad-CAM
     target_layer = model.features[-1]
     cam = GradCAM(model, target_layer)
     return model, cam, device
@@ -86,146 +113,123 @@ def load_sample_dataset():
     _, _, test_loader, _ = get_dataloaders(batch_size=1, num_workers=0)
     return test_loader.dataset
 
+def process_uploaded_image(uploaded_file):
+    """Convert an uploaded image file into an EfficientNet-ready Tensor."""
+    img = Image.open(uploaded_file).convert("RGB")
+    
+    # Needs to match Phase 2 dataset.py transform
+    transform = transforms.Compose([
+        transforms.Resize((64, 64)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    tensor = transform(img)
+    return tensor, "Uploaded Image"
+
 def main():
-    st.title("🖥️ WaferMap AI: Automated Defect Classification")
-    st.markdown("An end-to-end AI pipeline that classifies wafer defects, highlights anomalies via **Grad-CAM**, and assigns a real-time **Yield Risk Score**.")
+    st.title("⚡ WaferMap AI System")
+    st.markdown("Automated semiconductor defect classification with **Grad-CAM spatial localization** and **Yield Risk Scoring**.")
+    st.markdown("---")
     
-    # --- Sidebar ---
-    st.sidebar.header("Control Panel")
+    model, cam, device = load_app_model()
+    test_dataset = load_sample_dataset()
     
-    # Loading resources
-    with st.spinner("Loading AI Engine..."):
-        model, cam, device = load_app_model()
-        test_dataset = load_sample_dataset()
-        
-    st.sidebar.success("Model Engine Ready")
-    st.sidebar.markdown("---")
-    
-    # Input Selection
-    st.sidebar.subheader("1. Select Input")
-    input_method = st.sidebar.radio("Input Method", ["Use Sample Database"])
+    # --- UI LAYOUT ---
+    col_input, col_display = st.columns([1, 2])
     
     img_tensor = None
     true_label_name = None
     
-    # Let user pick a class, then pick a random image from that class
-    selected_class = st.sidebar.selectbox("Filter by True Defect Type", ["Any"] + CLASS_NAMES)
-    
-    # We find indices match
-    indices = []
-    for i in range(len(test_dataset)):
-        if selected_class == "Any" or CLASS_NAMES[test_dataset[i][1]] == selected_class:
-            indices.append(i)
-            if len(indices) > 50: # Cap so it runs fast
-                break
+    with col_input:
+        st.markdown("### Input Source")
+        
+        # 1. FILE UPLOAD FEATURE
+        uploaded_file = st.file_uploader("Upload Wafer Map (.png, .jpg)", type=["png", "jpg", "jpeg"])
+        
+        st.markdown("---")
+        st.markdown("Or select from the Database:")
+        
+        # 2. SAMPLE SELECTOR
+        selected_class = st.selectbox("Filter Database by True Defect Type", ["Any"] + CLASS_NAMES)
+        
+        indices = []
+        for i in range(len(test_dataset)):
+            if selected_class == "Any" or CLASS_NAMES[test_dataset[i][1]] == selected_class:
+                indices.append(i)
+                if len(indices) > 50: break
                 
-    selected_idx = st.sidebar.slider("Select Sample #", 0, len(indices)-1 if len(indices)>0 else 0, 0)
-    actual_idx = indices[selected_idx]
-    
-    img_tensor, true_label_idx = test_dataset[actual_idx]
-    true_label_name = CLASS_NAMES[true_label_idx]
-    st.sidebar.info(f"Loaded database sample `{actual_idx}`\n\nTrue Label: **{true_label_name}**")
+        selected_idx = st.slider("Select Sample #", 0, len(indices)-1 if len(indices)>0 else 0, 0)
+        
+        if uploaded_file is not None:
+            img_tensor, true_label_name = process_uploaded_image(uploaded_file)
+            st.success(f"Loaded: {uploaded_file.name}")
+        else:
+            actual_idx = indices[selected_idx]
+            img_tensor, true_label_idx = test_dataset[actual_idx]
+            true_label_name = CLASS_NAMES[true_label_idx]
+            st.info(f"Loaded Sample ID: `{actual_idx}`  \nTrue Label: **{true_label_name}**")
 
-    run_btn = st.sidebar.button("▶️ Run AI Analysis", use_container_width=True, type="primary")
+        run_btn = st.button("▶️ Analyze Wafer", use_container_width=True, type="primary")
 
-    # --- Main Area ---
-    if run_btn:
-        with st.spinner("Executing Neural Network Pipeline..."):
-            time.sleep(0.5) # Slight UX delay
-            
-            # Add batch dimension
-            img_batch = img_tensor.unsqueeze(0).to(device)
-            
-            # --- MODEL INFERENCE & GRAD-CAM ---
-            # Forward pass through Grad-CAM
-            heatmap_map, output, pred_class_idx = cam(img_batch)
-            
-            # Softmax probabilities
-            probs = F.softmax(output, dim=1)[0].detach().numpy()
-            confidence = float(probs[pred_class_idx])
-            pred_class_name = CLASS_NAMES[pred_class_idx]
-            
-            # --- RISK SCORING ---
-            risk_score, action = calculate_risk_score(pred_class_name, confidence, heatmap_map)
-            
-            # --- IMAGE PREPARATION ---
+    with col_display:
+        if not run_btn and img_tensor is not None:
+            st.markdown("### Input Preview")
             img_rgb_display = unnormalize_image(img_tensor)
-            heatmap_overlay = overlay_heatmap(img_rgb_display, heatmap_map)
+            st.image(img_rgb_display, width=300, caption="Waiting for analysis...")
+            
+        elif run_btn and img_tensor is not None:
+            with st.spinner("Running EfficientNet-B0 Inference..."):
+                time.sleep(0.3) # UI Polish
+                
+                img_batch = img_tensor.unsqueeze(0).to(device)
+                
+                # INFERENCE & CAM
+                heatmap_map, output, pred_class_idx = cam(img_batch)
+                
+                probs = F.softmax(output, dim=1)[0].detach().numpy()
+                confidence = float(probs[pred_class_idx])
+                pred_class_name = CLASS_NAMES[pred_class_idx]
+                
+                # RISK SCORING
+                risk_score, action = calculate_risk_score(pred_class_name, confidence, heatmap_map)
+                
+                img_rgb_display = unnormalize_image(img_tensor)
+                heatmap_overlay = overlay_heatmap(img_rgb_display, heatmap_map)
+                
+            # --- RENDER RESULTS ---
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                color = "#2ecc71" if pred_class_name == true_label_name else ("#ffffff" if true_label_name == "Uploaded Image" else "#e74c3c")
+                st.markdown(f"""
+                <div class="metric-card">
+                    <p class="metric-label">AI Classification</p>
+                    <p class="metric-value" style="color:{color}">{pred_class_name}</p>
+                    <p style="margin:0; color:#888">Confidence: {confidence*100:.1f}%</p>
+                </div>
+                """, unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <p class="metric-label">Yield Risk Score</p>
+                    <p class="metric-value">{risk_score} <span style="font-size:1rem;color:#888">/ 100</span></p>
+                </div>
+                """, unsafe_allow_html=True)
+            with c3:
+                status_class = "status-monitor" if action == "MONITOR" else "status-investigate" if action == "INVESTIGATE" else "status-stop"
+                st.markdown(f"""
+                <div class="metric-card {status_class}">
+                    <p class="metric-label">Factory Action</p>
+                    <p class="action-header">{action}</p>
+                </div>
+                """, unsafe_allow_html=True)
 
-        # --- TOP METRICS ROW ---
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            color = "#2ecc71" if pred_class_name == true_label_name else "#e74c3c"
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-label">AI Classification</p>
-                <p class="metric-value" style="color:{color}">{pred_class_name}</p>
-                <p style="margin:0; color:#aaa">Confidence: {confidence*100:.1f}%</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-label">Yield Risk Score</p>
-                <p class="metric-value">{risk_score} / 100</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with col3:
-            status_class = "status-monitor" if action == "MONITOR" else "status-investigate" if action == "INVESTIGATE" else "status-stop"
-            st.markdown(f"""
-            <div class="metric-card {status_class}">
-                <p class="metric-label">Recommended Action</p>
-                <p class="action-header">{action}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # --- VISUALIZATION ROW ---
-        st.subheader("Visual Explanations")
-        vc1, vc2, vc3 = st.columns([1,1,1])
-        
-        with vc1:
-            st.markdown("**Original Wafer Map** (Input)")
-            st.image(img_rgb_display, use_container_width=True)
-            
-        with vc2:
-            st.markdown("**Grad-CAM Attention Map**")
-            # Just the raw heatmap using matplotlib
-            fig, ax = plt.subplots(figsize=(4,4))
-            fig.patch.set_facecolor("#1e1e2f")
-            ax.imshow(heatmap_map, cmap="jet")
-            ax.axis('off')
-            st.pyplot(fig)
-            plt.close(fig)
-            
-        with vc3:
-            st.markdown("**Overlay Explanation**")
-            st.image(heatmap_overlay, use_container_width=True)
-
-        # --- DETAILED PROBABILITIES ---
-        st.markdown("---")
-        with st.expander("Show AI Raw Probabilities"):
-            probs_df = pd.DataFrame({
-                "Defect Class": CLASS_NAMES,
-                "Probability": probs
-            }).sort_values(by="Probability", ascending=False)
-            
-            st.bar_chart(probs_df.set_index("Defect Class"))
-            
-    else:
-        # Default state
-        st.info("👈 Select an input from the sidebar and click **Run AI Analysis** to start.")
-        st.markdown("""
-        ### How it works:
-        1. **Input:** The dashboard extracts a silicon wafer map image from our phase 1 database.
-        2. **Classification:** It feeds it into the trained EfficientNet-B0 CNN (Phase 2).
-        3. **Explainability:** Grad-CAM traces gradients backwards to visualize *where* the CNN found the defect (Phase 3).
-        4. **Decision:** The final Yield Risk Score evaluates the severity and surface area to recommend factory line actions (Phase 4).
-        """)
+            st.markdown("### Spatial Root-Cause Localization")
+            vc1, vc2 = st.columns(2)
+            with vc1:
+                st.image(img_rgb_display, use_container_width=True, caption=f"Original Input ({true_label_name})")
+            with vc2:
+                st.image(heatmap_overlay, use_container_width=True, caption=f"Grad-CAM Attention (Pred: {pred_class_name})")
 
 if __name__ == "__main__":
     main()
