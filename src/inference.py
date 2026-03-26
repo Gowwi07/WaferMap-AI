@@ -77,8 +77,33 @@ def unnormalize_image(tensor: torch.Tensor) -> np.ndarray:
     return np.transpose(img, (1, 2, 0))  # (C,H,W) -> (H,W,C)
 
 
+def is_wafer_map(pil_img: Image.Image) -> bool:
+    """Heuristic to detect if an image is a wafer map vs a natural photo."""
+    gray = np.array(pil_img.convert("L"))
+    h, w = gray.shape
+    c = max(1, min(w, h) // 15)  # 1/15th of the image for corners
+    
+    # Extract the 4 corners
+    corners = np.concatenate([
+        gray[:c, :c].flatten(),
+        gray[:c, -c:].flatten(),
+        gray[-c:, :c].flatten(),
+        gray[-c:, -c:].flatten()
+    ])
+    
+    # In a true wafer map, the bounding box corners are empty background.
+    # A natural photo has high variance in the corners (objects, textures, lighting).
+    if np.std(corners) > 25:
+        return False
+    return True
+
 def run_inference_with_gradcam(assets: InferenceAssets, pil: Image.Image) -> dict:
     """Run a single prediction with Grad-CAM and risk scoring."""
+    if not is_wafer_map(pil):
+        return {
+            "error": "The uploaded image appears to be a natural photograph or invalid. Please upload a valid circular Wafer Map."
+        }
+        
     # Ensure RGB
     pil = pil.convert("RGB")
     img_tensor = assets.transform(pil)
