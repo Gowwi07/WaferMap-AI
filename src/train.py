@@ -50,12 +50,13 @@ METRICS_PATH = os.path.join(REPORT_DIR, "phase2_metrics.json")
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 # GPU-optimized settings matching PPT specification for >96% accuracy
-EPOCHS       = 30    # Full 30 epochs on GPU (2 hrs on T4, faster on RTX 3050)
+EPOCHS       = 30    # Max epochs — early stopping will kick in sooner if val plateaus
 BATCH_SIZE   = 32    # Larger batch for GPU throughput
 LR_BACKBONE  = 1e-4  # Adam LR matching PPT spec
 LR_HEAD      = 1e-3  # Larger LR for classifier head
 DROPOUT      = 0.3   # 30% dropout for regularization
 NUM_WORKERS  = 0     # MUST BE 0 on Windows to prevent PyTorch DataLoader deadlocks
+EARLY_STOPPING_PATIENCE = 5  # Stop if val_acc doesn't improve for this many epochs
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Train] Using device: {DEVICE}")
@@ -306,6 +307,7 @@ def main():
     # ── 5. Training loop ──────────────────────────────────────────────────────
     history    = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
+    epochs_no_improve = 0  # Early stopping counter
 
     for epoch in range(1, EPOCHS + 1):
         ep_start = time.time()
@@ -334,7 +336,13 @@ def main():
             best_val_acc = val_acc
             torch.save(model.state_dict(), MODEL_PATH)
             print(f"  [**] New best model saved (val_acc={val_acc*100:.1f}%)")
-
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+            print(f"  [--] No improvement for {epochs_no_improve}/{EARLY_STOPPING_PATIENCE} epochs (best={best_val_acc*100:.1f}%)")
+            if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+                print(f"\n  [Early Stop] Val accuracy did not improve for {EARLY_STOPPING_PATIENCE} consecutive epochs. Stopping.")
+                break
     total_time = time.time() - start_time
     print(f"\n[Train] Training complete in {total_time/60:.1f} minutes.")
     print(f"[Train] Best val accuracy: {best_val_acc*100:.1f}%")
