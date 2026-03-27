@@ -1,107 +1,144 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // --- Layout & Sidebar logic ---
+
+    // ===== SIDEBAR =====
     const sidebar = document.getElementById("sidebar");
     const sidebarToggle = document.getElementById("sidebarToggle");
+    sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("collapsed"));
+
+    // ===== TABS =====
     const tabLinks = document.querySelectorAll(".tab-link");
     const tabPanes = document.querySelectorAll(".tab-pane");
-
-    // Toggle Sidebar
-    sidebarToggle.addEventListener("click", () => {
-        sidebar.classList.toggle("collapsed");
-    });
-
-    // Tab Switching
     tabLinks.forEach(link => {
         link.addEventListener("click", () => {
-            // Remove active class from all
             tabLinks.forEach(l => l.classList.remove("active"));
             tabPanes.forEach(p => p.classList.remove("active"));
-            // Add active to current
             link.classList.add("active");
             const target = document.getElementById(link.dataset.target);
             if (target) target.classList.add("active");
         });
     });
 
-    // --- Modal Config Logic ---
-    const configToggleBtn = document.getElementById("configToggleBtn");
+    // ===== CONFIG MODAL =====
     const configOverlay = document.getElementById("configOverlay");
+    const configToggleBtn = document.getElementById("configToggleBtn");
     const closeConfigBtn = document.getElementById("closeConfigBtn");
-    
-    // Explanation Modal Elements
-    const explanationOverlay = document.getElementById("explanationOverlay");
-    const closeExplanationBtn = document.getElementById("closeExplanationBtn");
-    const explanationText = document.getElementById("explanationText");
-
     const saveApiBtn = document.getElementById("saveApiBtn");
     const apiUrlInput = document.getElementById("apiUrlInput");
     const apiStatusDisplay = document.getElementById("apiStatusDisplay");
-    
-    // Status Badge
     const serverStatusBadge = document.getElementById("serverStatusBadge");
     const statusDot = serverStatusBadge.querySelector(".status-dot");
     const statusText = document.getElementById("statusText");
 
     let apiUrl = localStorage.getItem("waferApiUrl") || "http://localhost:8000";
     apiUrlInput.value = apiUrl;
-    
-    // Open/Close modal
-    configToggleBtn.addEventListener("click", () => {
-        configOverlay.classList.add("active");
-    });
-    closeConfigBtn.addEventListener("click", () => {
-        configOverlay.classList.remove("active");
-    });
-    // Optional: click outside to close
-    configOverlay.addEventListener("click", (e) => {
-        if(e.target === configOverlay) configOverlay.classList.remove("active");
-    });
 
+    configToggleBtn.addEventListener("click", () => configOverlay.classList.add("active"));
+    closeConfigBtn.addEventListener("click", () => configOverlay.classList.remove("active"));
+    configOverlay.addEventListener("click", (e) => { if (e.target === configOverlay) configOverlay.classList.remove("active"); });
     saveApiBtn.addEventListener("click", () => {
-        apiUrl = apiUrlInput.value.trim().replace(/\/$/, ""); 
+        apiUrl = apiUrlInput.value.trim().replace(/\/$/, "");
         localStorage.setItem("waferApiUrl", apiUrl);
         configOverlay.classList.remove("active");
-        checkServerRealtime();
+        checkServerHealth();
     });
 
-    // Explanation Modal Close
-    closeExplanationBtn.addEventListener("click", () => {
-        explanationOverlay.classList.remove("active");
-    });
-    explanationOverlay.addEventListener("click", (e) => {
-        if(e.target === explanationOverlay) explanationOverlay.classList.remove("active");
-    });
-
-    // Ping the backend /health to reassure the user
-    async function checkServerRealtime() {
-        statusDot.className = "status-dot"; // reset
+    async function checkServerHealth() {
+        statusDot.className = "status-dot";
         statusText.innerText = "Checking...";
         try {
-            // we use the health endpoint instead of predict
-            const res = await fetch(`${apiUrl}/health`, { 
-                method: "GET",
-                headers: { "ngrok-skip-browser-warning": "true" }
-            });
+            const res = await fetch(`${apiUrl}/health`, { method: "GET", headers: { "ngrok-skip-browser-warning": "true" } });
             if (res.ok) {
                 statusDot.classList.add("online");
-                statusText.innerText = "Target Online";
-                apiStatusDisplay.innerText = "Targeting: " + apiUrl;
+                statusText.innerText = "Engine Online";
+                apiStatusDisplay.innerText = "Connected: " + apiUrl;
                 apiStatusDisplay.style.color = "var(--success)";
-            } else {
-                throw new Error("Bad response");
-            }
-        } catch (err) {
+            } else throw new Error("Bad response");
+        } catch {
             statusDot.classList.add("offline");
-            statusText.innerText = "Target Offline";
-            apiStatusDisplay.innerText = "Server Unreachable";
+            statusText.innerText = "Engine Offline";
+            apiStatusDisplay.innerText = "Unreachable — check your Ngrok tunnel";
             apiStatusDisplay.style.color = "var(--danger)";
         }
     }
-    // Check on startup
-    checkServerRealtime();
+    checkServerHealth();
 
+    // ===== EXPLANATION MODAL =====
+    const explanationOverlay = document.getElementById("explanationOverlay");
+    const closeExplanationBtn = document.getElementById("closeExplanationBtn");
+    closeExplanationBtn.addEventListener("click", () => explanationOverlay.classList.remove("active"));
+    explanationOverlay.addEventListener("click", (e) => { if (e.target === explanationOverlay) explanationOverlay.classList.remove("active"); });
 
-    // --- Samples Population ---
+    function buildExplanation(className, confidence, riskScore, action) {
+        const confidencePct = (confidence * 100).toFixed(1);
+        document.getElementById("explanationSubtitle").innerText = `${className} defect · ${confidencePct}% confidence`;
+
+        // Determine risk colour
+        let riskColor = "var(--success)";
+        if (action === "STOP LOT" || action === "STOP") riskColor = "var(--danger)";
+        else if (action === "INVESTIGATE") riskColor = "var(--warning)";
+
+        // Build explanation steps specific to the defect type + action
+        const defectExplanations = {
+            "Center": "The defect is concentrated at the wafer center, typically caused by systematic gas distribution or plasma non-uniformity during CVD or etch processes.",
+            "Donut": "A ring-like defect surrounding the center, often caused by temperature gradients or irregular photoresist spinning at the wafer hub.",
+            "Edge-Loc": "Defects localized along specific edge arcs, typically caused by edge bead removal issues, clamp ring pressure, or edge gas flow anomalies.",
+            "Edge-Ring": "A full circumferential defect ring indicating chuck or wafer-holder edge sealing issues, or plasma edge sheath inconsistencies.",
+            "Loc": "Localized cluster defects suggesting contamination from a specific chamber component, particulate generation, or handling robot contact.",
+            "Near-Full": "Nearly the entire wafer surface is affected, indicating a severe, systemic process failure such as a blocked nozzle or major equipment malfunction.",
+            "Random": "Scattered random defects without spatial pattern, typically from airborne contamination, random particle events, or minor handling issues.",
+            "Scratch": "Linear scratches indicating mechanical contact — likely from robot blade alignment, cassette slot friction, or probe card contact during testing.",
+            "None": "No defect pattern detected. The wafer appears clean and within expected yield parameters."
+        };
+
+        const actionSteps = {
+            "STOP LOT": [
+                { title: "Halt the Lot", detail: "Immediately stop further processing of this wafer lot to prevent cascading yield loss across downstream steps." },
+                { title: "Isolate the Chamber", detail: "Lock out the process chamber for inspection. Do not run additional wafers until root cause is confirmed." },
+                { title: "Engineer Escalation", detail: "Alert the process engineer and fab manager. Initiate a formal Equipment Alarm Report (EAR)." }
+            ],
+            "STOP": [
+                { title: "Halt the Lot", detail: "Immediately stop further processing to prevent additional yield loss." },
+                { title: "Isolate the Chamber", detail: "Lock out the process chamber for inspection and maintenance review." },
+                { title: "Engineer Escalation", detail: "Alert the process engineer immediately and file an Equipment Alarm Report." }
+            ],
+            "INVESTIGATE": [
+                { title: "Flag the Lot", detail: "Mark this lot for enhanced monitoring. Do not yet stop production, but increase sampling frequency." },
+                { title: "Review Sensor Logs", detail: "Pull the last 24h process data for the relevant tool — check pressure, temperature, and gas flow traces for anomalies." },
+                { title: "Watch for Clustering", detail: "If the next 2-3 wafers from this chamber show similar patterns, escalate to a STOP LOT action immediately." }
+            ],
+            "MONITOR": [
+                { title: "Continue Production", detail: "No immediate process intervention is required. This detection is within acceptable yield bounds." },
+                { title: "Standard Sampling", detail: "Maintain regular SPC monitoring. Note this wafer in the defect database for trend tracking." },
+                { title: "Periodic Review", detail: "Review defect trend charts at end-of-shift. Escalate only if frequency increases above the control limit." }
+            ]
+        };
+
+        const steps = actionSteps[action] || actionSteps["MONITOR"];
+        const defectDesc = defectExplanations[className] || "Pattern identified by the AI classifier based on spatial feature maps extracted from EfficientNet-B0.";
+
+        const stepsHTML = steps.map((s, i) => `
+            <div class="explanation-step">
+                <span class="step-number">0${i + 1}</span>
+                <div class="step-text"><strong>${s.title}</strong><br>${s.detail}</div>
+            </div>
+        `).join("");
+
+        document.getElementById("explanationBody").innerHTML = `
+            <div style="display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem;">
+                <span class="explanation-risk-badge" style="color: ${riskColor};">${riskScore}<sup>/100</sup></span>
+                <span style="background: ${riskColor}22; color: ${riskColor}; border: 1px solid ${riskColor}55; border-radius: 6px; padding: 4px 12px; font-weight: 700; font-size: 0.8rem; letter-spacing: 1px;">${action}</span>
+            </div>
+            <p style="color: var(--text-sec); font-size: 0.88rem; line-height: 1.6; margin-bottom: 0.4rem;">${defectDesc}</p>
+            <div class="explanation-steps">${stepsHTML}</div>
+        `;
+    }
+
+    window.showExplanation = function (className, confidence, riskScore, action) {
+        buildExplanation(className, confidence, riskScore, action);
+        explanationOverlay.classList.add("active");
+    };
+
+    // ===== SAMPLE IMAGES =====
     const sampleGrid = document.getElementById("sampleGrid");
     const sampleClasses = ["center", "donut", "edge_loc", "edge_ring", "loc", "near_full", "random", "scratch", "none"];
     sampleClasses.forEach(c => {
@@ -111,207 +148,213 @@ document.addEventListener("DOMContentLoaded", () => {
         img.title = c.replace("_", " ");
         img.onerror = () => img.style.display = "none";
         img.addEventListener("click", () => {
-            // Auto switch to Dashboard tab and load image
             document.querySelector('[data-target="tab-dashboard"]').click();
-            loadSampleImage(img.src, c);
+            fetch(img.src).then(r => r.blob()).then(blob => {
+                handleFiles([new File([blob], `${c}.png`, { type: "image/png" })]);
+            }).catch(e => console.error("Sample load failed", e));
         });
-        if(sampleGrid) sampleGrid.appendChild(img);
+        if (sampleGrid) sampleGrid.appendChild(img);
     });
 
-    async function loadSampleImage(src, className) {
-        try {
-            const response = await fetch(src);
-            const blob = await response.blob();
-            const file = new File([blob], `${className}.png`, { type: "image/png" });
-            handleFile(file);
-        } catch (e) {
-            console.error("Failed to load sample blob.");
-        }
-    }
-
-    // --- Core Predictor UI ---
+    // ===== UPLOAD ZONE =====
     const dropZone = document.getElementById("dropZone");
     const fileInput = document.getElementById("fileInput");
     const selectFileBtn = document.getElementById("selectFileBtn");
-    const uiUpload = dropZone.querySelector(".upload-content");
-    const uiPreview = document.getElementById("previewContainer");
-    const imagePreview = document.getElementById("imagePreview");
+    const uploadEmpty = document.getElementById("uploadEmpty");
+    const uploadPreview = document.getElementById("uploadPreview");
+    const previewTitle = document.getElementById("previewTitle");
+    const previewGrid = document.getElementById("previewGrid");
     const resetBtn = document.getElementById("resetBtn");
     const runInferenceBtn = document.getElementById("runInferenceBtn");
-    
+
     // Results
     const resultsZone = document.getElementById("resultsZone");
-    
-    // Batch UI Elements
-    const batchProgressText = document.getElementById("batchProgressText");
-    const batchProgressFill = document.getElementById("batchProgressFill");
+    const progressLabel = document.getElementById("progressLabel");
+    const progressCount = document.getElementById("progressCount");
+    const progressFill = document.getElementById("progressFill");
     const batchResultsContainer = document.getElementById("batchResultsContainer");
 
     let currentFiles = [];
 
-    selectFileBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        fileInput.click();
-    });
-
+    selectFileBtn.addEventListener("click", (e) => { e.preventDefault(); fileInput.click(); });
     dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
-    dropZone.addEventListener("dragleave", e => { e.preventDefault(); dropZone.classList.remove("dragover"); });
-    dropZone.addEventListener("drop", e => {
-        e.preventDefault(); dropZone.classList.remove("dragover");
-        if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener("change", (e) => {
-        if(e.target.files.length) handleFiles(e.target.files);
-    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", e => { e.preventDefault(); dropZone.classList.remove("dragover"); if (e.dataTransfer.files.length) handleFiles(Array.from(e.dataTransfer.files)); });
+    fileInput.addEventListener("change", (e) => { if (e.target.files.length) handleFiles(Array.from(e.target.files)); });
 
     function handleFiles(files) {
-        let maxFiles = Math.min(files.length, 20);
-        currentFiles = [];
-        const imagePreviewContainer = document.getElementById("imagePreviewContainer");
-        imagePreviewContainer.innerHTML = "";
-        
-        for(let i = 0; i < maxFiles; i++) {
-            if(!files[i].type.match("image.*")) continue;
-            currentFiles.push(files[i]);
-            
+        const imageFiles = files.filter(f => f.type.match("image.*")).slice(0, 20);
+        if (imageFiles.length === 0) return;
+        currentFiles = imageFiles;
+
+        previewGrid.innerHTML = "";
+        imageFiles.forEach(file => {
             const reader = new FileReader();
             reader.onload = e => {
+                const wrap = document.createElement("div");
+                wrap.className = "preview-thumb";
                 const img = document.createElement("img");
                 img.src = e.target.result;
-                img.setAttribute("data-filename", files[i].name);
-                imagePreviewContainer.appendChild(img);
+                img.alt = file.name;
+                const lbl = document.createElement("div");
+                lbl.className = "preview-thumb-label";
+                lbl.title = file.name;
+                lbl.textContent = file.name;
+                wrap.appendChild(img);
+                wrap.appendChild(lbl);
+                previewGrid.appendChild(wrap);
             };
-            reader.readAsDataURL(files[i]);
-        }
-        
-        if (currentFiles.length > 0) {
-            uiUpload.classList.add("hidden");
-            uiPreview.classList.remove("hidden");
-            resultsZone.classList.add("hidden");
-        }
+            reader.readAsDataURL(file);
+        });
+
+        const extra = files.length > 20 ? ` (${files.length - 20} ignored, max 20)` : "";
+        previewTitle.textContent = `${imageFiles.length} image${imageFiles.length > 1 ? "s" : ""} selected${extra}`;
+        uploadEmpty.classList.add("hidden");
+        uploadPreview.classList.remove("hidden");
+        resultsZone.classList.add("hidden");
+        batchResultsContainer.innerHTML = "";
     }
 
     resetBtn.addEventListener("click", () => {
-        currentFiles = []; fileInput.value = "";
-        const imagePreviewContainer = document.getElementById("imagePreviewContainer");
-        imagePreviewContainer.innerHTML = "";
-        uiPreview.classList.add("hidden");
-        uiUpload.classList.remove("hidden");
-        resultsZone.classList.add("hidden");
+        currentFiles = [];
+        fileInput.value = "";
+        previewGrid.innerHTML = "";
         batchResultsContainer.innerHTML = "";
+        uploadPreview.classList.add("hidden");
+        uploadEmpty.classList.remove("hidden");
+        resultsZone.classList.add("hidden");
     });
 
-    // Run Backend Inference Sequential Batch
+    // ===== BATCH INFERENCE =====
     runInferenceBtn.addEventListener("click", async () => {
-        if(currentFiles.length === 0) return;
-        
+        if (currentFiles.length === 0) return;
+
+        // Disable button during run
+        runInferenceBtn.disabled = true;
+        runInferenceBtn.textContent = "⏳ Running...";
+
         resultsZone.classList.remove("hidden");
         batchResultsContainer.innerHTML = "";
-        
+
         const total = currentFiles.length;
         let completed = 0;
-        
-        // Update Progress
-        const updateProgress = () => {
-            batchProgressText.innerText = `Processing: ${completed} / ${total}`;
-            batchProgressFill.style.width = `${(completed / total) * 100}%`;
-        };
+
+        function updateProgress() {
+            const pct = total > 0 ? (completed / total) * 100 : 0;
+            progressCount.textContent = `${completed} / ${total}`;
+            progressFill.style.width = pct + "%";
+            if (completed < total) {
+                progressLabel.textContent = `Analyzing image ${completed + 1} of ${total}...`;
+            } else {
+                progressLabel.textContent = `✅ Analysis complete — ${total} wafer${total > 1 ? "s" : ""} processed`;
+            }
+        }
         updateProgress();
 
-        // Process sequentially
         for (let i = 0; i < total; i++) {
             const file = currentFiles[i];
-            
-            // Generate Original Image Data URL
-            const origImageUrl = await new Promise(res => {
+
+            // Read file as data URL for original display
+            const origUrl = await new Promise(res => {
                 const r = new FileReader();
                 r.onload = e => res(e.target.result);
                 r.readAsDataURL(file);
             });
 
             try {
-                const formData = new FormData();
-                formData.append("image", file);
-                const response = await fetch(`${apiUrl}/predict`, {
+                const fd = new FormData();
+                fd.append("image", file);
+                const resp = await fetch(`${apiUrl}/predict`, {
                     method: "POST",
-                    body: formData,
+                    body: fd,
                     headers: { "ngrok-skip-browser-warning": "true" }
                 });
-                
-                if(!response.ok) throw new Error(`Status ${response.status}`);
-                const data = await response.json();
-                if(data.error) throw new Error(data.error);
-                
-                // Append row
-                addBatchResultRow(file.name, origImageUrl, data);
-
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                appendResultRow(file.name, origUrl, data);
             } catch (err) {
-                console.error("Batch error on file " + file.name, err);
+                appendErrorRow(file.name, origUrl, err.message);
             }
-            
+
             completed++;
             updateProgress();
         }
-        
+
+        runInferenceBtn.disabled = false;
+        runInferenceBtn.textContent = "✨ Analyze All";
     });
 
-    function generateRiskExplanation(className, confidence, riskScore, action) {
-        let text = `The model identified a <strong>${className}</strong> defect with <strong>${(confidence*100).toFixed(1)}% confidence</strong>. `;
-        
-        if (action === "STOP LOT" || action === "STOP") {
-            text += `A high risk score of <strong>${riskScore}</strong> was triggered because this defect pattern (e.g. Center, Edge-Ring, Donut) typically arises from systematic equipment failures (like miscalibrated etching tools or gas distribution issues). Halting the lot is required to prevent widespread wafer scrapping.`;
-        } else if (action === "INVESTIGATE") {
-            text += `A moderate risk score of <strong>${riskScore}</strong> was calculated. This indicates a potential rising issue in the tool line. Although a hard stop isn't mandatory yet, reviewing the sensor logs and monitoring subsequent wafers for clustering is highly recommended.`;
-        } else {
-            text += `A very low risk score of <strong>${riskScore}</strong> was given. Random or None patterns generally represent isolated anomalies rather than systemic chamber faults, so no immediate process intervention is required. Contextual monitoring is sufficient.`;
-        }
-        return text;
-    }
-
-    // Opens explanation modal
-    window.showRiskExplanation = function(className, confidence, riskScore, action) {
-        explanationText.innerHTML = generateRiskExplanation(className, confidence, riskScore, action);
-        explanationOverlay.classList.add("active");
-    };
-
-    function addBatchResultRow(filename, origUrl, data) {
-        const confidencePct = (data.confidence * 100).toFixed(1);
-        const className = data.class;
-        const riskVal = data.risk_score !== undefined ? data.risk_score : 0;
+    function appendResultRow(filename, origUrl, data) {
+        const cls = data.class || "Unknown";
+        const conf = data.confidence || 0;
+        const risk = data.risk_score !== undefined ? data.risk_score : 0;
         const action = data.action || "MONITOR";
-        const camDataUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : "";
-        
-        // CSS coloring logic
-        let colorClass = "color-good";
-        let scoreClass = "status-card good";
-        if(action === "STOP LOT" || action === "STOP") { colorClass = "color-bad"; scoreClass = "status-card bad"; }
-        else if(action === "INVESTIGATE") { colorClass = "color-warn"; scoreClass = "status-card warn"; }
+        const camUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : null;
+        const confPct = (conf * 100).toFixed(1);
 
-        const rowHTML = `
-            <div class="batch-row fade-in">
-                <div class="batch-imgs">
-                    <img src="${origUrl}" class="batch-thumb" alt="Original Input" title="Input: ${filename}" />
-                    ${camDataUrl ? `<img src="${camDataUrl}" class="batch-thumb" alt="Grad-CAM" title="Grad-CAM localization" />` : ''}
-                </div>
-                
-                <div class="batch-info">
-                    <h3 class="batch-class ${className!=='none'?'color-bad':''}">${className}</h3>
-                    <div class="confidence-bar-bg" style="max-width:200px; margin: 4px 0; height:4px;">
-                        <div class="confidence-bar-fill" style="width: ${data.confidence * 100}%"></div>
-                    </div>
-                    <span class="batch-meta">File: ${filename} &nbsp;|&nbsp; Confidence: ${confidencePct}%</span>
-                </div>
+        // Row styling
+        const isOk = cls.toLowerCase() === "none";
+        const isStop = action === "STOP LOT" || action === "STOP";
+        const isWarn = action === "INVESTIGATE";
+        const rowClass = isStop ? "row-danger" : (isWarn ? "row-warning" : "row-ok");
+        const clsClass = isOk ? "cls-ok" : "cls-defect";
+        const badgeClass = isStop ? "stop" : (isWarn ? "warn" : "ok");
 
-                <div class="batch-score-section">
-                    <div class="batch-score" onclick="showRiskExplanation('${className}', ${data.confidence}, ${riskVal}, '${action}')">
-                        ${riskVal}<span style="font-size: 1rem; color: #888">/100</span>
-                    </div>
-                    <span class="batch-action ${colorClass}">${action}</span>
+        const camHTML = camUrl
+            ? `<div class="batch-img-wrap"><img src="${camUrl}" alt="Grad-CAM" /><div class="img-label">Grad-CAM</div></div>`
+            : `<div class="batch-img-wrap" style="display:flex;align-items:center;justify-content:center;opacity:0.4;font-size:0.7rem;color:#888;">No CAM</div>`;
+
+        const row = document.createElement("div");
+        row.className = `batch-row ${rowClass}`;
+        row.innerHTML = `
+            <div class="batch-images">
+                <div class="batch-img-wrap">
+                    <img src="${origUrl}" alt="Original" />
+                    <div class="img-label">Original</div>
                 </div>
+                ${camHTML}
+            </div>
+            <div class="batch-info">
+                <div class="batch-filename" title="${filename}">📄 ${filename}</div>
+                <div class="batch-classname ${clsClass}">${cls}</div>
+            </div>
+            <div class="batch-confidence">
+                <div class="conf-label">Confidence</div>
+                <div class="conf-pct">${confPct}%</div>
+                <div class="conf-bar-bg"><div class="conf-bar-fill" style="width: ${conf * 100}%"></div></div>
+            </div>
+            <div class="batch-risk">
+                <button class="risk-btn" onclick="showExplanation('${cls}', ${conf}, ${risk}, '${action}')">
+                    <span class="risk-value">${risk}</span>
+                    <span class="risk-denom">/ 100</span>
+                    <span class="risk-hint">▸ CLICK FOR DETAILS</span>
+                </button>
+            </div>
+            <div class="batch-action">
+                <span class="action-badge ${badgeClass}">${action}</span>
             </div>
         `;
-        
-        // Insert naturally to the container
-        batchResultsContainer.insertAdjacentHTML('beforeend', rowHTML);
+        batchResultsContainer.appendChild(row);
+    }
+
+    function appendErrorRow(filename, origUrl, errMsg) {
+        const row = document.createElement("div");
+        row.className = "batch-row row-danger";
+        row.style.opacity = "0.6";
+        row.innerHTML = `
+            <div class="batch-images">
+                <div class="batch-img-wrap"><img src="${origUrl}" alt="Input" /><div class="img-label">Input</div></div>
+            </div>
+            <div class="batch-info">
+                <div class="batch-filename" title="${filename}">📄 ${filename}</div>
+                <div class="batch-classname cls-defect" style="font-size:1rem;">⚠️ Inference Failed</div>
+                <div style="font-size: 0.78rem; color: var(--danger); margin-top: 4px;">${errMsg}</div>
+            </div>
+            <div class="batch-confidence">—</div>
+            <div class="batch-risk">—</div>
+            <div class="batch-action"><span class="action-badge stop">ERROR</span></div>
+        `;
+        batchResultsContainer.appendChild(row);
     }
 });

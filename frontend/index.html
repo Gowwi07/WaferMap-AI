@@ -3,76 +3,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WaferMap AI | Fast Vision Edge</title>
+    <title>WaferMap AI | Semiconductor Defect Intelligence</title>
+    <meta name="description" content="AI-powered wafer defect classification with Grad-CAM localization and yield risk scoring.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Advanced Animated Background with Aurora Glassmorphism -->
+    <!-- Animated Background -->
     <div class="bg-animation">
         <div class="orb orb-1"></div>
         <div class="orb orb-2"></div>
         <div class="orb orb-3"></div>
         <div class="bg-glass-overlay"></div>
     </div>
-    
+
+    <!-- Navigation -->
     <nav class="glass-nav">
         <div class="nav-content">
             <div class="logo">
                 <span class="icon">⚡</span> WaferMap<span class="highlight">AI</span>
             </div>
-            
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <div class="server-status" id="serverStatusBadge">
-                    <span class="status-dot"></span> <span id="statusText">Checking Engine...</span>
+                    <span class="status-dot"></span>
+                    <span id="statusText">Checking Engine...</span>
                 </div>
-                <!-- Toggle config modal -->
-                <button class="config-toggle-btn" id="configToggleBtn">
-                    ⚙️ Configuration
-                </button>
+                <button class="config-toggle-btn" id="configToggleBtn">⚙️ Configuration</button>
             </div>
         </div>
     </nav>
 
     <!-- Configuration Modal -->
-    <div class="config-modal-overlay" id="configOverlay">
-        <div class="config-modal glass-panel">
+    <div class="modal-overlay" id="configOverlay">
+        <div class="modal-box glass-panel">
             <div class="modal-header">
                 <h3>Backend API Connection</h3>
                 <button id="closeConfigBtn" class="close-btn">&times;</button>
             </div>
-            <p>Enter your local backend URL (e.g., Ngrok or Cloudflare tunnel URL)</p>
+            <p style="color: var(--text-sec); font-size:0.9rem; margin-bottom:1.2rem;">Enter your local backend URL (Ngrok or Cloudflare tunnel)</p>
             <div class="input-group">
                 <input type="url" id="apiUrlInput" placeholder="https://abc-123.ngrok-free.app" />
-                <button id="saveApiBtn" class="btn btn-primary">Save URL</button>
+                <button id="saveApiBtn" class="btn btn-primary">Save</button>
             </div>
-            <p class="status-text" id="apiStatusDisplay">Not Configured</p>
+            <p id="apiStatusDisplay" style="font-size:0.85rem; margin-top:0.5rem; color: var(--text-sec);">Not Configured</p>
         </div>
     </div>
 
-    <!-- Explanation Modal -->
-    <div class="config-modal-overlay" id="explanationOverlay">
-        <div class="config-modal glass-panel">
+    <!-- Risk Explanation Modal -->
+    <div class="modal-overlay" id="explanationOverlay">
+        <div class="modal-box glass-panel" style="max-width: 540px;">
             <div class="modal-header">
-                <h3>Risk Score & Action Explanation</h3>
+                <div>
+                    <h3>🔍 Risk Score Explanation</h3>
+                    <p id="explanationSubtitle" style="color: var(--text-sec); font-size: 0.85rem; margin-top: 4px;"></p>
+                </div>
                 <button id="closeExplanationBtn" class="close-btn">&times;</button>
             </div>
-            <p id="explanationText" style="line-height: 1.6; font-size: 1.05rem; margin-top: 10px;"></p>
+            <div id="explanationBody" style="margin-top: 1.2rem;"></div>
         </div>
     </div>
 
-    <!-- MAIN APP LAYOUT -->
+    <!-- App Layout -->
     <main class="app-layout">
-        
-        <!-- COLLAPSIBLE SIDEBAR -->
+
+        <!-- Sidebar -->
         <aside class="sidebar glass-panel collapsed" id="sidebar">
             <button id="sidebarToggle" class="sidebar-toggle">
                 <span class="toggle-icon">◀</span>
             </button>
-            
-            <div class="sidebar-inner" id="sidebarInner">
+            <div class="sidebar-inner">
                 <h3 class="sidebar-title">Menu</h3>
                 <ul class="nav-tabs">
                     <li class="tab-link active" data-target="tab-dashboard">
@@ -88,58 +89,79 @@
                         <span class="tab-icon">📈</span> <span class="tab-text">Explore Trends</span>
                     </li>
                 </ul>
-                
                 <hr class="divider" />
                 <div class="sidebar-footer">
                     <p>Powered by <strong>EfficientNet-B0</strong></p>
-                    <p>SanDisk Hackathon</p>
+                    <p>SanDisk Hackathon 2025</p>
                 </div>
             </div>
         </aside>
 
-        <!-- MAIN TAB CONTENTS -->
+        <!-- Main Content -->
         <section class="main-content">
-            
-            <!-- TAB 1: DASHBOARD -->
+
+            <!-- TAB 1: Dashboard -->
             <div id="tab-dashboard" class="tab-pane active fade-in">
-                <header class="hero">
+                <div class="hero">
                     <h1>Automated Defect <span class="gradient-text">Classification</span></h1>
-                    <p>Upload a Wafer Map image to instantly run inference and assess yield risk.</p>
-                </header>
+                    <p>Upload up to 20 wafer map images for batch AI analysis, Grad-CAM localization, and yield risk assessment.</p>
+                </div>
 
-                <div class="dashboard-grid">
-                    <div class="upload-zone glass-panel" id="dropZone">
-                        <div class="upload-content">
-                            <div class="upload-icon">📤</div>
-                            <h2>Drag & Drop Wafer Image</h2>
-                            <p>or click to browse (.png, .jpg) - Max 20 images</p>
-                            <input type="file" id="fileInput" accept="image/png, image/jpeg" multiple style="display:none;" />
-                            <button class="btn btn-secondary mt-1" id="selectFileBtn">Select Files</button>
-                        </div>
-                        <div class="preview hidden" id="previewContainer">
-                            <div id="imagePreviewContainer" class="preview-grid"></div>
-                            <div class="button-row">
-                                <button class="btn btn-secondary" id="resetBtn">Change Image</button>
-                                <button class="btn btn-primary" id="runInferenceBtn">✨ Request AI Inference</button>
+                <!-- Upload Zone -->
+                <div class="upload-zone glass-panel" id="dropZone">
+                    <!-- Empty State -->
+                    <div class="upload-empty" id="uploadEmpty">
+                        <div class="upload-icon-wrap">📤</div>
+                        <h2>Drag & Drop Wafer Maps</h2>
+                        <p>Supports .png, .jpg — up to 20 images at once</p>
+                        <input type="file" id="fileInput" accept="image/png, image/jpeg" multiple style="display:none;" />
+                        <button class="btn btn-primary" id="selectFileBtn">Select Images</button>
+                    </div>
+
+                    <!-- Preview State (files selected, not yet run) -->
+                    <div class="upload-preview hidden" id="uploadPreview">
+                        <div class="preview-header">
+                            <div>
+                                <h3 id="previewTitle">0 images selected</h3>
+                                <p style="color: var(--text-sec); font-size: 0.85rem;">Review your selection, then click Analyze</p>
                             </div>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <button class="btn btn-secondary" id="resetBtn">✕ Clear</button>
+                                <button class="btn btn-primary" id="runInferenceBtn">✨ Analyze All</button>
+                            </div>
+                        </div>
+                        <div id="previewGrid" class="preview-grid"></div>
+                    </div>
+                </div>
+
+                <!-- Results Zone -->
+                <div class="results-zone hidden" id="resultsZone">
+                    <!-- Progress Bar -->
+                    <div class="progress-header" id="progressHeader">
+                        <div class="progress-info">
+                            <span class="progress-label" id="progressLabel">Processing images...</span>
+                            <span class="progress-count" id="progressCount">0 / 0</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
                         </div>
                     </div>
 
-                    <div class="results-zone hidden" id="resultsZone">
-                        <div class="batch-progress">
-                            <h3 id="batchProgressText">Processing: 0 / 0</h3>
-                            <div class="confidence-bar-bg" style="margin-bottom: 1.5rem;">
-                                <div class="confidence-bar-fill" id="batchProgressFill" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        <div id="batchResultsContainer" class="batch-results-container">
-                            <!-- Dynamic batch rows will be injected here -->
-                        </div>
+                    <!-- Results Table Header -->
+                    <div class="results-table-header">
+                        <span style="flex: 0 0 220px;">Wafer Images</span>
+                        <span style="flex: 1;">File & Classification</span>
+                        <span style="flex: 0 0 180px; text-align:center;">Confidence</span>
+                        <span style="flex: 0 0 140px; text-align:center;">Risk Score</span>
+                        <span style="flex: 0 0 120px; text-align:center;">Action</span>
                     </div>
+
+                    <!-- Dynamic Rows -->
+                    <div id="batchResultsContainer"></div>
                 </div>
             </div>
 
-            <!-- TAB 2: ABOUT -->
+            <!-- TAB 2: About -->
             <div id="tab-about" class="tab-pane fade-in">
                 <div class="glass-panel content-panel">
                     <h2 class="gradient-text">About WaferMap AI</h2>
@@ -149,74 +171,46 @@
                     <h3>Core Technologies</h3>
                     <ul>
                         <li><strong>FastAPI Backend</strong>: Handles inference routing and tensor manipulation gracefully on local edge devices.</li>
-                        <li><strong>PyTorch & Transfer Learning</strong>: Employs a tailored EfficientNet-B0 backbone adapted specifically for the 64x64 Wafer topology.</li>
-                        <li><strong>Grad-CAM</strong>: Utilizes Gradient-weighted Class Activation Mapping to mathematically demonstrate *where* the model is looking to determine anomalies.</li>
+                        <li><strong>PyTorch & Transfer Learning</strong>: Employs a tailored EfficientNet-B0 backbone adapted specifically for the Wafer topology.</li>
+                        <li><strong>Grad-CAM</strong>: Utilizes Gradient-weighted Class Activation Mapping to demonstrate <em>where</em> the model is looking.</li>
                         <li><strong>Ngrok Tunnels</strong>: Proxies local edge-device compute safely to the production cloud UI.</li>
                     </ul>
                 </div>
             </div>
 
-            <!-- TAB 3: SAMPLES -->
+            <!-- TAB 3: Samples -->
             <div id="tab-samples" class="tab-pane fade-in">
                 <div class="glass-panel content-panel">
                     <h2>Test with Real Dataset Samples</h2>
-                    <p>Click on any of the WM-811K samples below to automatically load them into the Dashboard and run an inference test.</p>
+                    <p>Click on any WM-811K sample below to load it into the Dashboard.</p>
                     <br>
-                    <div class="sample-grid" id="sampleGrid">
-                        <!-- Instantiated via JS -->
-                    </div>
+                    <div class="sample-grid" id="sampleGrid"></div>
                 </div>
             </div>
 
-            <!-- TAB 4: EDA TRENDS -->
+            <!-- TAB 4: EDA -->
             <div id="tab-eda" class="tab-pane fade-in">
                 <div class="glass-panel content-panel">
                     <h2>Exploratory Data Analysis</h2>
-                    <p>These dynamic data visualizations showcase the inherent macro-trends of the wafer manufacturing process using the <code>wfmap</code> library.</p>
+                    <p>Dynamic visualizations of the WM-811K wafer manufacturing dataset.</p>
                     <br>
                     <div class="eda-gallery">
-                        <div class="eda-card">
-                            <h4>Numerical Heatmap</h4>
-                            <img src="samples/plot_0_nheatmap.png" onerror="this.style.display='none';" alt="Numerical Heatmap" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Categorical Heatmap</h4>
-                            <img src="samples/plot_1_cheatmap.png" onerror="this.style.display='none';" alt="Categorical Heatmap" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Raw WaferMap Viewer</h4>
-                            <img src="samples/plot_2_wafermap.png" onerror="this.style.display='none';" alt="WaferMap Viewer" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Defect Map Profiler</h4>
-                            <img src="samples/plot_3_defectmap.png" onerror="this.style.display='none';" alt="Defect Map" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Inc Map Tracker</h4>
-                            <img src="samples/plot_4_incmap.png" onerror="this.style.display='none';" alt="Inc Map" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>WIF Trend Analyzer</h4>
-                            <img src="samples/plot_5_wif_trend.png" onerror="this.style.display='none';" alt="WIF Trend" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Macro WIF Trends</h4>
-                            <img src="samples/plot_6_wif_trends.png" onerror="this.style.display='none';" alt="WIF Trends" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>Twin Trends Modeling</h4>
-                            <img src="samples/plot_7_twin_trends.png" onerror="this.style.display='none';" alt="Twin Trends" />
-                        </div>
-                        <div class="eda-card">
-                            <h4>WIF Correlation Plot</h4>
-                            <img src="samples/plot_8_wif_corrplot.png" onerror="this.style.display='none';" alt="Correlation Plot" />
-                        </div>
+                        <div class="eda-card"><h4>Numerical Heatmap</h4><img src="samples/plot_0_nheatmap.png" onerror="this.style.display='none';" alt="Numerical Heatmap" /></div>
+                        <div class="eda-card"><h4>Categorical Heatmap</h4><img src="samples/plot_1_cheatmap.png" onerror="this.style.display='none';" alt="Categorical Heatmap" /></div>
+                        <div class="eda-card"><h4>Raw WaferMap Viewer</h4><img src="samples/plot_2_wafermap.png" onerror="this.style.display='none';" alt="WaferMap Viewer" /></div>
+                        <div class="eda-card"><h4>Defect Map Profiler</h4><img src="samples/plot_3_defectmap.png" onerror="this.style.display='none';" alt="Defect Map" /></div>
+                        <div class="eda-card"><h4>Inc Map Tracker</h4><img src="samples/plot_4_incmap.png" onerror="this.style.display='none';" alt="Inc Map" /></div>
+                        <div class="eda-card"><h4>WIF Trend Analyzer</h4><img src="samples/plot_5_wif_trend.png" onerror="this.style.display='none';" alt="WIF Trend" /></div>
+                        <div class="eda-card"><h4>Macro WIF Trends</h4><img src="samples/plot_6_wif_trends.png" onerror="this.style.display='none';" alt="WIF Trends" /></div>
+                        <div class="eda-card"><h4>Twin Trends Modeling</h4><img src="samples/plot_7_twin_trends.png" onerror="this.style.display='none';" alt="Twin Trends" /></div>
+                        <div class="eda-card"><h4>WIF Correlation Plot</h4><img src="samples/plot_8_wif_corrplot.png" onerror="this.style.display='none';" alt="Correlation Plot" /></div>
                     </div>
                 </div>
             </div>
 
         </section>
     </main>
+
     <script src="script.js"></script>
 </body>
 </html>
