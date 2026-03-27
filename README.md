@@ -4,6 +4,7 @@ An AI-powered wafer defect classification system built for the PSG iTech × SanD
 
 ## What It Does
 - Classifies 9 wafer defect patterns using EfficientNet-B0 (~97% accuracy)
+- Fully GPU-optimized DataLoader handles all 811K records cleanly, preventing PyTorch multiprocessing deadlocks
 - Localizes defect regions with Grad-CAM heatmaps
 - Outputs a Yield Risk Score (0–100) for each wafer
 
@@ -38,6 +39,9 @@ An AI-powered wafer defect classification system built for the PSG iTech × SanD
 ## Quick Start
 ```bash
 # 1. Install dependencies
+# NOTE: Ensure you have CUDA 12.4 installed if using an NVIDIA GPU.
+pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+pip install efficientnet-pytorch==0.7.1 --no-deps
 pip install -r requirements.txt
 
 # 2. Verify setup
