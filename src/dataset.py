@@ -227,8 +227,8 @@ def get_dataloaders(batch_size=32, num_workers=0):
     test_ds  = WaferMapDataset(test_df,  transform=EVAL_TRANSFORM)
 
     # Weighted sampler: oversample rare classes during training
-    sample_weights = [get_class_weights(train_df)[CLASS_TO_IDX[lbl]]
-                      for lbl in train_df["label"]]
+    cw = get_class_weights(train_df)
+    sample_weights = [cw[CLASS_TO_IDX[lbl]] for lbl in train_df["label"]]
     sampler = WeightedRandomSampler(sample_weights, len(train_df), replacement=True)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,
