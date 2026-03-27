@@ -78,40 +78,25 @@ def unnormalize_image(tensor: torch.Tensor) -> np.ndarray:
 
 
 def is_wafer_map(pil_img: Image.Image) -> bool:
-    """Heuristic to detect if an image is a wafer map vs a natural photo."""
+    """Heuristic to detect if an image is a wafer map vs a natural photo.
+    Kept deliberately loose — better to classify a non-wafer than to refuse a real wafer.
+    """
     w, h = pil_img.size
     aspect = w / float(h)
-    
-    # 1. Geometrical check: Wafer maps are typically square bounding boxes. 
-    # An A4 document is ~1.4 or ~0.7.
-    if aspect < 0.7 or aspect > 1.3:
+
+    # Reject very non-square images (e.g. banner screenshots or A4 pages)
+    if aspect < 0.5 or aspect > 2.0:
         return False
-        
+
     gray = np.array(pil_img.convert("L"))
-    c = max(1, min(w, h) // 15)  # 1/15th of the image for corners
-    
-    # Extract the 4 corners
-    corners = np.concatenate([
-        gray[:c, :c].flatten(),
-        gray[:c, -c:].flatten(),
-        gray[-c:, :c].flatten(),
-        gray[-c:, -c:].flatten()
-    ])
-    
-    # 2. In a true wafer map, the bounding box corners are empty background.
-    # A natural photo has high variance in the corners.
-    if np.std(corners) > 25:
-        return False
-        
-    # 3. Document / Schematic Check. 
-    # The max area an inscribed circle can physically take in a square is ~78.5% (pi/4).
-    # If the image is 90%+ a single exact color (like a white page), it's not a wafer map.
+
+    # Reject images that are 95%+ a single exact pixel value (blank docs)
     counts = np.bincount(gray.flatten())
     if len(counts) > 0:
         most_common_pct = counts.max() / counts.sum()
-        if most_common_pct > 0.88:
+        if most_common_pct > 0.95:
             return False
-            
+
     return True
 
 def run_inference_with_gradcam(assets: InferenceAssets, pil: Image.Image) -> dict:

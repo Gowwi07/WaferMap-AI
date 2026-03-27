@@ -269,7 +269,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     body: fd,
                     headers: { "ngrok-skip-browser-warning": "true" }
                 });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                if (!resp.ok) {
+                    // Try to get the friendly detail message from a FastAPI HTTPException
+                    let errMsg = `HTTP ${resp.status}`;
+                    try {
+                        const errBody = await resp.json();
+                        if (errBody.detail) errMsg = errBody.detail;
+                    } catch (_) {}
+                    throw new Error(errMsg);
+                }
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
                 appendResultRow(file.name, origUrl, data);

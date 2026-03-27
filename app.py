@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from src.inference import load_assets, overlay_to_base64_png, run_inference_with_gradcam
@@ -29,11 +29,20 @@ def health():
 @app.post("/predict")
 async def predict(image: UploadFile = File(...)):
     if ASSETS is None:
-        return {"error": "Model not found. Train first using src/train.py"}
+        raise HTTPException(status_code=503, detail="Model not found. Train first using src/train.py")
 
     content = await image.read()
-    pil = Image.open(io.BytesIO(content))
+    try:
+        pil = Image.open(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not open image: {e}")
+
     result = run_inference_with_gradcam(ASSETS, pil)
+
+    # run_inference_with_gradcam returns {"error": ...} on validation failures
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result["error"])
+
     return {
         "class": result["predicted_class"],
         "confidence": result["confidence"],
