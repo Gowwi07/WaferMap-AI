@@ -24,9 +24,8 @@ from collections import Counter
 ROOT_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(ROOT_DIR, "data")
 PKL_PATH   = os.path.join(DATA_DIR, "LSWMD.pkl")
-IMG_SIZE   = 64    # Reduced for CPU training speed (vs 224 for GPU/production)
-                   # 64x64 is ~11x faster per image than 224x224
-MAX_SAMPLES_PER_CLASS = 500   # Cap each class for fast CPU training
+IMG_SIZE   = 224   # Full resolution for GPU training (matches EfficientNet pretrain)
+MAX_SAMPLES_PER_CLASS = None  # No cap — use ALL available data (GPU can handle it)
 
 # The 9 defect classes (index = class label for the model)
 CLASS_NAMES = [
@@ -111,21 +110,23 @@ def load_raw_dataframe():
     df["label"] = df[col].apply(normalize_label)
     df = df.dropna(subset=["label"])
 
-    # Cap each class at MAX_SAMPLES_PER_CLASS for fast CPU training.
-    # This keeps the classes balanced and training time manageable.
-    # On a GPU, remove this cap to use all 811K samples.
+    # Use all available data (GPU mode — no per-class cap).
+    # WeightedRandomSampler in the DataLoader handles class imbalance.
     sampled_parts = []
     for cls in CLASS_NAMES:
         cls_df = df[df["label"] == cls]
-        n = min(len(cls_df), MAX_SAMPLES_PER_CLASS)
-        sampled_parts.append(cls_df.sample(n=n, random_state=42))
+        if MAX_SAMPLES_PER_CLASS is not None:
+            n = min(len(cls_df), MAX_SAMPLES_PER_CLASS)
+            sampled_parts.append(cls_df.sample(n=n, random_state=42))
+        else:
+            sampled_parts.append(cls_df)
 
     df_balanced = pd.concat(sampled_parts).sample(frac=1, random_state=42).reset_index(drop=True)
 
     counts = df_balanced["label"].value_counts()
-    print(f"[Dataset] CPU-optimized subset: {len(df_balanced):,} total samples")
+    print(f"[Dataset] GPU full dataset: {len(df_balanced):,} total samples")
     for cls in CLASS_NAMES:
-        print(f"           {cls:<12}: {counts.get(cls,0):>4}")
+        print(f"           {cls:<12}: {counts.get(cls,0):>6}")
     return df_balanced
 
 
@@ -231,7 +232,7 @@ def get_dataloaders(batch_size=32, num_workers=0):
     sampler = WeightedRandomSampler(sample_weights, len(train_df), replacement=True)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,
-                              num_workers=num_workers, pin_memory=False)
+                              num_workers=num_workers, pin_memory=True)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False,
                               num_workers=num_workers)
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False,

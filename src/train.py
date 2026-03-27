@@ -49,16 +49,19 @@ MODEL_PATH  = os.path.join(MODELS_DIR, "efficientnet_wafer.pth")
 METRICS_PATH = os.path.join(REPORT_DIR, "phase2_metrics.json")
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
-# These are the "knobs" that control how training works.
-# For CPU training we keep epochs low but still get good results.
-EPOCHS       = 15    # More epochs since dataset is small (compensate for less data)
-BATCH_SIZE   = 16    # Smaller batch for stability on small dataset
-LR_BACKBONE  = 5e-5  # Very small LR for pretrained backbone
-LR_HEAD      = 5e-4  # Larger LR for new classifier head
-DROPOUT      = 0.3   # 30% dropout to avoid overfitting on small dataset
+# GPU-optimized settings matching PPT specification for >96% accuracy
+EPOCHS       = 30    # Full 30 epochs on GPU (2 hrs on T4, faster on RTX 3050)
+BATCH_SIZE   = 32    # Larger batch for GPU throughput
+LR_BACKBONE  = 1e-4  # Adam LR matching PPT spec
+LR_HEAD      = 1e-3  # Larger LR for classifier head
+DROPOUT      = 0.3   # 30% dropout for regularization
+NUM_WORKERS  = 4     # Parallel data loading (GPU training benefit)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Train] Using device: {DEVICE}")
+if DEVICE.type == "cuda":
+    print(f"[Train] GPU: {torch.cuda.get_device_name(0)}")
+    print(f"[Train] VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
 
 
 # ── Training functions ────────────────────────────────────────────────────────
@@ -270,7 +273,7 @@ def main():
 
     # ── 1. Load data ──────────────────────────────────────────────────────────
     train_loader, val_loader, test_loader, class_weights = get_dataloaders(
-        batch_size=BATCH_SIZE, num_workers=0
+        batch_size=BATCH_SIZE, num_workers=NUM_WORKERS
     )
 
     # ── 2. Build model ────────────────────────────────────────────────────────
