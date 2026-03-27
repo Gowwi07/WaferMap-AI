@@ -167,6 +167,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("resetBtn");
     const runInferenceBtn = document.getElementById("runInferenceBtn");
 
+    // Analysis Mode Toggle
+    const analysisModeToggle = document.getElementById("analysisModeToggle");
+    const labelSingle = document.getElementById("labelSingle");
+    const labelMulti = document.getElementById("labelMulti");
+
+    analysisModeToggle.addEventListener("change", () => {
+        if (analysisModeToggle.checked) {
+            labelSingle.classList.remove("active");
+            labelMulti.classList.add("active");
+        } else {
+            labelSingle.classList.add("active");
+            labelMulti.classList.remove("active");
+        }
+    });
+
     // Results
     const resultsZone = document.getElementById("resultsZone");
     const progressLabel = document.getElementById("progressLabel");
@@ -262,9 +277,12 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             try {
+                const isMultiMode = analysisModeToggle.checked;
+                const endpoint = isMultiMode ? "/predict_multi" : "/predict";
+                
                 const fd = new FormData();
                 fd.append("image", file);
-                const resp = await fetch(`${apiUrl}/predict`, {
+                const resp = await fetch(`${apiUrl}${endpoint}`, {
                     method: "POST",
                     body: fd,
                     headers: { "ngrok-skip-browser-warning": "true" }
@@ -280,7 +298,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
-                appendResultRow(file.name, origUrl, data);
+                
+                if (isMultiMode) {
+                    appendMultiResultRow(file.name, origUrl, data);
+                } else {
+                    appendResultRow(file.name, origUrl, data);
+                }
             } catch (err) {
                 appendErrorRow(file.name, origUrl, err.message);
             }
@@ -292,6 +315,62 @@ document.addEventListener("DOMContentLoaded", () => {
         runInferenceBtn.disabled = false;
         runInferenceBtn.textContent = "✨ Analyze All";
     });
+
+    function appendMultiResultRow(filename, origUrl, data) {
+        const defects = data.detected_defects || [];
+        const confMap = data.confidence_per_class || {};
+        const camUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : null;
+        
+        // Styling based on cleanliness
+        const isClean = data.is_clean;
+        const rowClass = isClean ? "row-ok" : "row-danger";
+        const badgeClass = isClean ? "ok" : "stop";
+        const actionText = isClean ? "MONITOR" : "STOP (MULTI)";
+
+        const camHTML = camUrl
+            ? `<div class="batch-img-wrap"><img src="${camUrl}" alt="Grad-CAM" /><div class="img-label">CAM (Max Conf)</div></div>`
+            : `<div class="batch-img-wrap" style="display:flex;align-items:center;justify-content:center;opacity:0.4;font-size:0.7rem;color:#888;">No CAM</div>`;
+
+        // Format defect tags
+        let defTags = isClean 
+            ? `<span class="action-badge ok" style="font-size:0.7rem;">None</span>`
+            : defects.map(d => `<span class="action-badge stop" style="font-size:0.7rem; margin-right:4px; margin-bottom:4px;">${d}</span>`).join("");
+            
+        // Max confidence
+        let maxConf = 0;
+        if (!isClean && defects.length > 0) {
+            maxConf = Math.max(...defects.map(d => confMap[d] || 0));
+        }
+        const confPct = (maxConf * 100).toFixed(1);
+
+        const row = document.createElement("div");
+        row.className = `batch-row ${rowClass}`;
+        row.innerHTML = `
+            <div class="batch-images">
+                <div class="batch-img-wrap">
+                    <img src="${origUrl}" alt="Original" />
+                    <div class="img-label">Original</div>
+                </div>
+                ${camHTML}
+            </div>
+            <div class="batch-info">
+                <div class="batch-filename" title="${filename}">📄 ${filename}</div>
+                <div style="margin-top: 6px; display: flex; flex-wrap: wrap;">${defTags}</div>
+            </div>
+            <div class="batch-confidence">
+                <div class="conf-label">${isClean ? "Clean" : "Max Confidence"}</div>
+                <div class="conf-pct">${isClean ? "—" : confPct + "%"}</div>
+                ${!isClean ? `<div class="conf-bar-bg"><div class="conf-bar-fill" style="width: ${maxConf * 100}%"></div></div>` : ""}
+            </div>
+            <div class="batch-risk">
+                <div style="color: var(--text-sec); font-size: 0.8rem; text-align: center;">Multi-Label Mode<br>Risk Scorer N/A</div>
+            </div>
+            <div class="batch-action">
+                <span class="action-badge ${badgeClass}">${actionText}</span>
+            </div>
+        `;
+        batchResultsContainer.appendChild(row);
+    }
 
     function appendResultRow(filename, origUrl, data) {
         const cls = data.class || "Unknown";
