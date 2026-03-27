@@ -15,14 +15,14 @@ Write-Host "Starting FastAPI server on Port 8000..."
 
 # Start FastAPI process in a new window
 # Note: assuming uvicorn is available via the pip requirements
-Start-Process powershell -ArgumentList "-NoExit -Command `"uvicorn app:app --port 8000 --reload`""
+Start-Process powershell -ArgumentList "-NoExit -Command `"python -m uvicorn app:app --port 8000 --reload`""
 
 Write-Host "Wait 3 seconds for server to spin up..."
 Start-Sleep -Seconds 3
 
 Write-Host "Starting Ngrok tunnel..."
 # Start ngrok process in a new window
-Start-Process powershell -ArgumentList "-NoExit -Command `"ngrok http 8000`""
+Start-Process ngrok -ArgumentList "http 8000"
 
 Write-Host ""
 Write-Host "✅ Backend & Tunnel started!" -ForegroundColor Green

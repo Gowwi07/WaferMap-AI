@@ -55,7 +55,7 @@ BATCH_SIZE   = 32    # Larger batch for GPU throughput
 LR_BACKBONE  = 1e-4  # Adam LR matching PPT spec
 LR_HEAD      = 1e-3  # Larger LR for classifier head
 DROPOUT      = 0.3   # 30% dropout for regularization
-NUM_WORKERS  = 4     # Parallel data loading (GPU training benefit)
+NUM_WORKERS  = 0     # MUST BE 0 on Windows to prevent PyTorch DataLoader deadlocks
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Train] Using device: {DEVICE}")
