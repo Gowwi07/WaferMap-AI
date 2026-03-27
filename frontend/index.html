@@ -52,6 +52,17 @@
         </div>
     </div>
 
+    <!-- Explanation Modal -->
+    <div class="config-modal-overlay" id="explanationOverlay">
+        <div class="config-modal glass-panel">
+            <div class="modal-header">
+                <h3>Risk Score & Action Explanation</h3>
+                <button id="closeExplanationBtn" class="close-btn">&times;</button>
+            </div>
+            <p id="explanationText" style="line-height: 1.6; font-size: 1.05rem; margin-top: 10px;"></p>
+        </div>
+    </div>
+
     <!-- MAIN APP LAYOUT -->
     <main class="app-layout">
         
@@ -101,12 +112,12 @@
                         <div class="upload-content">
                             <div class="upload-icon">📤</div>
                             <h2>Drag & Drop Wafer Image</h2>
-                            <p>or click to browse (.png, .jpg)</p>
-                            <input type="file" id="fileInput" accept="image/png, image/jpeg" style="display:none;" />
-                            <button class="btn btn-secondary mt-1" id="selectFileBtn">Select File</button>
+                            <p>or click to browse (.png, .jpg) - Max 20 images</p>
+                            <input type="file" id="fileInput" accept="image/png, image/jpeg" multiple style="display:none;" />
+                            <button class="btn btn-secondary mt-1" id="selectFileBtn">Select Files</button>
                         </div>
                         <div class="preview hidden" id="previewContainer">
-                            <img id="imagePreview" src="" alt="Image Preview">
+                            <div id="imagePreviewContainer" class="preview-grid"></div>
                             <div class="button-row">
                                 <button class="btn btn-secondary" id="resetBtn">Change Image</button>
                                 <button class="btn btn-primary" id="runInferenceBtn">✨ Request AI Inference</button>
@@ -115,40 +126,14 @@
                     </div>
 
                     <div class="results-zone hidden" id="resultsZone">
-                        <div class="loading-overlay hidden" id="loadingState">
-                            <div class="spinner"></div>
-                            <p>Analyzing spatial signatures...</p>
-                        </div>
-                        
-                        <div class="prediction-cards">
-                            <div class="card glass-panel status-card" id="statusCard">
-                                <span class="card-label">Predicted Class</span>
-                                <h2 id="predictedClass">-</h2>
-                                <div class="confidence-bar-bg">
-                                    <div class="confidence-bar-fill" id="confidenceFill" style="width: 0%"></div>
-                                </div>
-                                <span class="sub-text">Confidence: <span id="confidenceText">0</span>%</span>
-                            </div>
-
-                            <div class="card glass-panel status-card" id="actionCard">
-                                <span class="card-label">Yield Risk</span>
-                                <h2 id="riskScore">-</h2>
-                                <span class="sub-text">Action: <span style="font-weight:bold" id="actionText">-</span></span>
+                        <div class="batch-progress">
+                            <h3 id="batchProgressText">Processing: 0 / 0</h3>
+                            <div class="confidence-bar-bg" style="margin-bottom: 1.5rem;">
+                                <div class="confidence-bar-fill" id="batchProgressFill" style="width: 0%"></div>
                             </div>
                         </div>
-
-                        <div class="visuals glass-panel mt-2">
-                            <h3 class="section-title">Grad-CAM Root Cause Localization</h3>
-                            <div class="heatmaps">
-                                <div class="image-box">
-                                    <span class="tag">Original Input</span>
-                                    <img id="resultOriginalImage" src="" alt="Original Image" />
-                                </div>
-                                <div class="image-box active">
-                                    <span class="tag tag-glow">CAM Attention</span>
-                                    <img id="resultCamImage" src="" alt="Grad-CAM Image" />
-                                </div>
-                            </div>
+                        <div id="batchResultsContainer" class="batch-results-container">
+                            <!-- Dynamic batch rows will be injected here -->
                         </div>
                     </div>
                 </div>

@@ -27,6 +27,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const configToggleBtn = document.getElementById("configToggleBtn");
     const configOverlay = document.getElementById("configOverlay");
     const closeConfigBtn = document.getElementById("closeConfigBtn");
+    
+    // Explanation Modal Elements
+    const explanationOverlay = document.getElementById("explanationOverlay");
+    const closeExplanationBtn = document.getElementById("closeExplanationBtn");
+    const explanationText = document.getElementById("explanationText");
+
     const saveApiBtn = document.getElementById("saveApiBtn");
     const apiUrlInput = document.getElementById("apiUrlInput");
     const apiStatusDisplay = document.getElementById("apiStatusDisplay");
@@ -56,6 +62,14 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.setItem("waferApiUrl", apiUrl);
         configOverlay.classList.remove("active");
         checkServerRealtime();
+    });
+
+    // Explanation Modal Close
+    closeExplanationBtn.addEventListener("click", () => {
+        explanationOverlay.classList.remove("active");
+    });
+    explanationOverlay.addEventListener("click", (e) => {
+        if(e.target === explanationOverlay) explanationOverlay.classList.remove("active");
     });
 
     // Ping the backend /health to reassure the user
@@ -127,18 +141,13 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Results
     const resultsZone = document.getElementById("resultsZone");
-    const loadingState = document.getElementById("loadingState");
-    const predictedClassLabel = document.getElementById("predictedClass");
-    const confidenceFill = document.getElementById("confidenceFill");
-    const confidenceText = document.getElementById("confidenceText");
-    const statusCard = document.getElementById("statusCard");
-    const actionCard = document.getElementById("actionCard");
-    const riskScore = document.getElementById("riskScore");
-    const actionText = document.getElementById("actionText");
-    const resultOriginalImage = document.getElementById("resultOriginalImage");
-    const resultCamImage = document.getElementById("resultCamImage");
+    
+    // Batch UI Elements
+    const batchProgressText = document.getElementById("batchProgressText");
+    const batchProgressFill = document.getElementById("batchProgressFill");
+    const batchResultsContainer = document.getElementById("batchResultsContainer");
 
-    let currentFile = null;
+    let currentFiles = [];
 
     selectFileBtn.addEventListener("click", (e) => {
         e.preventDefault();
@@ -149,97 +158,160 @@ document.addEventListener("DOMContentLoaded", () => {
     dropZone.addEventListener("dragleave", e => { e.preventDefault(); dropZone.classList.remove("dragover"); });
     dropZone.addEventListener("drop", e => {
         e.preventDefault(); dropZone.classList.remove("dragover");
-        if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
     });
     fileInput.addEventListener("change", (e) => {
-        if(e.target.files.length) handleFile(e.target.files[0]);
+        if(e.target.files.length) handleFiles(e.target.files);
     });
 
-    function handleFile(file) {
-        if(!file.type.match("image.*")) return;
-        currentFile = file;
-        const reader = new FileReader();
-        reader.onload = e => {
-            imagePreview.src = e.target.result;
-            resultOriginalImage.src = e.target.result; 
+    function handleFiles(files) {
+        let maxFiles = Math.min(files.length, 20);
+        currentFiles = [];
+        const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+        imagePreviewContainer.innerHTML = "";
+        
+        for(let i = 0; i < maxFiles; i++) {
+            if(!files[i].type.match("image.*")) continue;
+            currentFiles.push(files[i]);
+            
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = document.createElement("img");
+                img.src = e.target.result;
+                img.setAttribute("data-filename", files[i].name);
+                imagePreviewContainer.appendChild(img);
+            };
+            reader.readAsDataURL(files[i]);
+        }
+        
+        if (currentFiles.length > 0) {
             uiUpload.classList.add("hidden");
             uiPreview.classList.remove("hidden");
             resultsZone.classList.add("hidden");
-            statusCard.className = "card glass-panel status-card"; 
-            actionCard.className = "card glass-panel status-card";
-            resultCamImage.src = "";
         }
-        reader.readAsDataURL(file);
     }
 
     resetBtn.addEventListener("click", () => {
-        currentFile = null; fileInput.value = "";
+        currentFiles = []; fileInput.value = "";
+        const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+        imagePreviewContainer.innerHTML = "";
         uiPreview.classList.add("hidden");
         uiUpload.classList.remove("hidden");
         resultsZone.classList.add("hidden");
+        batchResultsContainer.innerHTML = "";
     });
 
-    // Run Backend Inference
+    // Run Backend Inference Sequential Batch
     runInferenceBtn.addEventListener("click", async () => {
-        if(!currentFile) return;
-        resultsZone.classList.remove("hidden");
-        loadingState.classList.remove("hidden");
+        if(currentFiles.length === 0) return;
         
-        setTimeout(async () => {
+        resultsZone.classList.remove("hidden");
+        batchResultsContainer.innerHTML = "";
+        
+        const total = currentFiles.length;
+        let completed = 0;
+        
+        // Update Progress
+        const updateProgress = () => {
+            batchProgressText.innerText = `Processing: ${completed} / ${total}`;
+            batchProgressFill.style.width = `${(completed / total) * 100}%`;
+        };
+        updateProgress();
+
+        // Process sequentially
+        for (let i = 0; i < total; i++) {
+            const file = currentFiles[i];
+            
+            // Generate Original Image Data URL
+            const origImageUrl = await new Promise(res => {
+                const r = new FileReader();
+                r.onload = e => res(e.target.result);
+                r.readAsDataURL(file);
+            });
+
             try {
                 const formData = new FormData();
-                formData.append("image", currentFile);
+                formData.append("image", file);
                 const response = await fetch(`${apiUrl}/predict`, {
                     method: "POST",
                     body: formData,
                     headers: { "ngrok-skip-browser-warning": "true" }
                 });
+                
                 if(!response.ok) throw new Error(`Status ${response.status}`);
                 const data = await response.json();
                 if(data.error) throw new Error(data.error);
-                updateResultsUI(data);
+                
+                // Append row
+                addBatchResultRow(file.name, origImageUrl, data);
+
             } catch (err) {
-                alert(`API Error! Are you sure your Ngrok tunnel ${apiUrl} is running?\n\nError: ` + err.message);
-                console.error(err);
-                checkServerRealtime();
-            } finally {
-                loadingState.classList.add("hidden");
+                console.error("Batch error on file " + file.name, err);
             }
-        }, 300);
+            
+            completed++;
+            updateProgress();
+        }
+        
     });
 
-    function updateResultsUI(data) {
+    function generateRiskExplanation(className, confidence, riskScore, action) {
+        let text = `The model identified a <strong>${className}</strong> defect with <strong>${(confidence*100).toFixed(1)}% confidence</strong>. `;
+        
+        if (action === "STOP LOT" || action === "STOP") {
+            text += `A high risk score of <strong>${riskScore}</strong> was triggered because this defect pattern (e.g. Center, Edge-Ring, Donut) typically arises from systematic equipment failures (like miscalibrated etching tools or gas distribution issues). Halting the lot is required to prevent widespread wafer scrapping.`;
+        } else if (action === "INVESTIGATE") {
+            text += `A moderate risk score of <strong>${riskScore}</strong> was calculated. This indicates a potential rising issue in the tool line. Although a hard stop isn't mandatory yet, reviewing the sensor logs and monitoring subsequent wafers for clustering is highly recommended.`;
+        } else {
+            text += `A very low risk score of <strong>${riskScore}</strong> was given. Random or None patterns generally represent isolated anomalies rather than systemic chamber faults, so no immediate process intervention is required. Contextual monitoring is sufficient.`;
+        }
+        return text;
+    }
+
+    // Opens explanation modal
+    window.showRiskExplanation = function(className, confidence, riskScore, action) {
+        explanationText.innerHTML = generateRiskExplanation(className, confidence, riskScore, action);
+        explanationOverlay.classList.add("active");
+    };
+
+    function addBatchResultRow(filename, origUrl, data) {
         const confidencePct = (data.confidence * 100).toFixed(1);
-        predictedClassLabel.innerText = data.class;
-        confidenceText.innerText = confidencePct;
-        confidenceFill.style.width = data.confidence * 100 + "%";
+        const className = data.class;
+        const riskVal = data.risk_score !== undefined ? data.risk_score : 0;
+        const action = data.action || "MONITOR";
+        const camDataUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : "";
+        
+        // CSS coloring logic
+        let colorClass = "color-good";
+        let scoreClass = "status-card good";
+        if(action === "STOP LOT" || action === "STOP") { colorClass = "color-bad"; scoreClass = "status-card bad"; }
+        else if(action === "INVESTIGATE") { colorClass = "color-warn"; scoreClass = "status-card warn"; }
 
-        if(data.class !== "none" && data.class !== "Normal") {
-             statusCard.className = "card glass-panel status-card bad";
-        } else {
-             statusCard.className = "card glass-panel status-card good";
-        }
+        const rowHTML = `
+            <div class="batch-row fade-in">
+                <div class="batch-imgs">
+                    <img src="${origUrl}" class="batch-thumb" alt="Original Input" title="Input: ${filename}" />
+                    ${camDataUrl ? `<img src="${camDataUrl}" class="batch-thumb" alt="Grad-CAM" title="Grad-CAM localization" />` : ''}
+                </div>
+                
+                <div class="batch-info">
+                    <h3 class="batch-class ${className!=='none'?'color-bad':''}">${className}</h3>
+                    <div class="confidence-bar-bg" style="max-width:200px; margin: 4px 0; height:4px;">
+                        <div class="confidence-bar-fill" style="width: ${data.confidence * 100}%"></div>
+                    </div>
+                    <span class="batch-meta">File: ${filename} &nbsp;|&nbsp; Confidence: ${confidencePct}%</span>
+                </div>
 
-        let riskVal = data.risk_score !== undefined ? data.risk_score : 0;
-        let action = data.action || "MONITOR";
-        let color = "var(--success)";
-
-        if(action === "STOP LOT" || action === "STOP") {
-            color = "var(--danger)";
-            actionCard.className = "card glass-panel status-card bad";
-        } else if(action === "INVESTIGATE") {
-            color = "var(--warning)";
-            actionCard.className = "card glass-panel status-card warn";
-        } else {
-            actionCard.className = "card glass-panel status-card good";
-        }
-
-        riskScore.innerText = riskVal + "/100";
-        actionText.innerText = action;
-        actionText.style.color = color;
-
-        if(data.gradcam_png_base64) {
-            resultCamImage.src = `data:image/png;base64,${data.gradcam_png_base64}`;
-        }
+                <div class="batch-score-section">
+                    <div class="batch-score" onclick="showRiskExplanation('${className}', ${data.confidence}, ${riskVal}, '${action}')">
+                        ${riskVal}<span style="font-size: 1rem; color: #888">/100</span>
+                    </div>
+                    <span class="batch-action ${colorClass}">${action}</span>
+                </div>
+            </div>
+        `;
+        
+        // Insert naturally to the container
+        batchResultsContainer.insertAdjacentHTML('beforeend', rowHTML);
     }
 });
