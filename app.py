@@ -6,30 +6,38 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from src.inference import load_assets, overlay_to_base64_png, run_inference_with_gradcam
+from src.inference_mixed import load_mixed_assets, run_mixed_inference
 
 
-app = FastAPI(title="Wafer Map AI API", version="0.2.0")
+app = FastAPI(title="Wafer Map AI API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-ASSETS = load_assets()
+# Load both models at startup
+ASSETS       = load_assets()         # Single-label  (WM-811K, 9 classes)
+MIXED_ASSETS = load_mixed_assets()   # Multi-label   (MixedWM38, 8 classes)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": ASSETS is not None}
+    return {
+        "status": "ok",
+        "single_label_model": ASSETS is not None,
+        "multi_label_model":  MIXED_ASSETS is not None,
+    }
 
 
 @app.post("/predict")
 async def predict(image: UploadFile = File(...)):
-    if ASSETS is None:
-        raise HTTPException(status_code=503, detail="Model not found. Train first using src/train.py")
+    """Unified auto-routing endpoint: MixedWM38 (multi) vs WM-811K (single)."""
+    if ASSETS is None or MIXED_ASSETS is None:
+        raise HTTPException(status_code=503, detail="Both models must be trained before predicting.")
 
     content = await image.read()
     try:
@@ -37,17 +45,25 @@ async def predict(image: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not open image: {e}")
 
-    result = run_inference_with_gradcam(ASSETS, pil)
+    # 1. Run Multi-Label model first
+    multi_result = run_mixed_inference(MIXED_ASSETS, pil)
+    
+    # 2. Check if it's truly a multi-defect wafer (>= 2 defects)
+    if multi_result.get("defect_count", 0) >= 2:
+        multi_result["mode"] = "multi"
+        return multi_result
 
-    # run_inference_with_gradcam returns {"error": ...} on validation failures
-    if "error" in result:
-        raise HTTPException(status_code=422, detail=result["error"])
+    # 3. Otherwise, fall back to the highly accurate Single-Label model
+    single_result = run_inference_with_gradcam(ASSETS, pil)
+    if "error" in single_result:
+        raise HTTPException(status_code=422, detail=single_result["error"])
 
     return {
-        "class": result["predicted_class"],
-        "confidence": result["confidence"],
-        "class_probabilities": result["class_probabilities"],
-        "risk_score": result["risk_score"],
-        "action": result["action"],
-        "gradcam_png_base64": overlay_to_base64_png(result["gradcam_overlay"]),
+        "mode": "single",
+        "class": single_result["predicted_class"],
+        "confidence": single_result["confidence"],
+        "class_probabilities": single_result["class_probabilities"],
+        "risk_score": single_result["risk_score"],
+        "action": single_result["action"],
+        "gradcam_png_base64": overlay_to_base64_png(single_result["gradcam_overlay"]),
     }

@@ -167,21 +167,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("resetBtn");
     const runInferenceBtn = document.getElementById("runInferenceBtn");
 
-    // Analysis Mode Toggle
-    const analysisModeToggle = document.getElementById("analysisModeToggle");
-    const labelSingle = document.getElementById("labelSingle");
-    const labelMulti = document.getElementById("labelMulti");
-
-    analysisModeToggle.addEventListener("change", () => {
-        if (analysisModeToggle.checked) {
-            labelSingle.classList.remove("active");
-            labelMulti.classList.add("active");
-        } else {
-            labelSingle.classList.add("active");
-            labelMulti.classList.remove("active");
-        }
-    });
-
     // Results
     const resultsZone = document.getElementById("resultsZone");
     const progressLabel = document.getElementById("progressLabel");
@@ -277,12 +262,9 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             try {
-                const isMultiMode = analysisModeToggle.checked;
-                const endpoint = isMultiMode ? "/predict_multi" : "/predict";
-                
                 const fd = new FormData();
                 fd.append("image", file);
-                const resp = await fetch(`${apiUrl}${endpoint}`, {
+                const resp = await fetch(`${apiUrl}/predict`, {
                     method: "POST",
                     body: fd,
                     headers: { "ngrok-skip-browser-warning": "true" }
@@ -299,7 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
                 
-                if (isMultiMode) {
+                if (data.mode === "multi") {
                     appendMultiResultRow(file.name, origUrl, data);
                 } else {
                     appendResultRow(file.name, origUrl, data);
