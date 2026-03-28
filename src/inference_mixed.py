@@ -107,8 +107,9 @@ def run_mixed_inference(assets: MixedInferenceAssets, pil: Image.Image) -> dict:
     gradcam_overlay_b64 = None
     if predicted_indices:
         best_class = int(np.argmax(probs))
-        heatmap, _, _ = assets.cam(img_batch, target_class=best_class)
-        img_rgb_np = np.array(pil_gray.convert("RGB")) / 255.0
+        heatmap, _, _ = assets.cam(img_batch, class_idx=best_class)
+        pil_resized = pil_gray.resize((224, 224), Image.Resampling.NEAREST)
+        img_rgb_np = np.array(pil_resized.convert("RGB")) / 255.0
         overlay = overlay_heatmap(img_rgb_np, heatmap)
         # Encode overlay as base64
         if overlay.max() <= 1.0:
