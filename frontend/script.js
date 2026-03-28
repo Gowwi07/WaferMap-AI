@@ -345,9 +345,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const camUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : null;
 
         const isClean = data.is_clean;
-        const rowClass = isClean ? "row-ok" : "row-danger";
-        const badgeClass = isClean ? "ok" : "stop";
-        const actionText = isClean ? "MONITOR" : "STOP (MULTI)";
+        const risk = data.risk_score !== undefined ? data.risk_score : 0;
+        const action = data.action || "MONITOR";
+        const isStop = action === "STOP LINE" || action === "STOP LOT" || action === "STOP";
+        const isWarn = action === "INVESTIGATE";
+        const rowClass = isClean ? "row-ok" : (isStop ? "row-danger" : (isWarn ? "row-warning" : "row-ok"));
+        const badgeClass = isClean ? "ok" : (isStop ? "stop" : (isWarn ? "warn" : "ok"));
+        const riskColorClass = risk < 30 ? "risk-low" : risk < 70 ? "risk-mid" : "risk-high";
 
         const camHTML = camUrl
             ? `<div class="batch-img-wrap"><img src="${camUrl}" alt="Grad-CAM" /><div class="img-label">CAM (Max Conf)</div></div>`
@@ -383,10 +387,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${!isClean ? `<div class="conf-bar-bg"><div class="conf-bar-fill" style="width: ${maxConf * 100}%"></div></div>` : ""}
             </div>
             <div class="batch-risk">
-                <div style="color: var(--text-sec); font-size: 0.8rem; text-align: center;">Multi-Label Mode<br>Risk Scorer N/A</div>
+                ${isClean ? `<div style="color: var(--text-sec); font-size: 0.8rem; text-align: center;">Clean<br>Risk: 0</div>` : `
+                <button class="risk-btn"
+                    data-cls="Mixed (${defects.join(', ')})"
+                    data-conf="${maxConf}"
+                    data-risk="${risk}"
+                    data-action="${action}">
+                    <span class="risk-value ${riskColorClass}">${risk}</span>
+                    <span class="risk-denom">/ 100</span>
+                    <span class="risk-hint">▸ CLICK FOR DETAILS</span>
+                </button>
+                `}
             </div>
             <div class="batch-action">
-                <span class="action-badge ${badgeClass}">${actionText}</span>
+                <span class="action-badge ${badgeClass}">${action}</span>
             </div>
         `;
         batchResultsContainer.appendChild(row);

@@ -23,6 +23,7 @@ MODEL_PATH = os.path.join(ROOT_DIR, "models", "mixed_model.pth")
 from src.dataset_mixed import MIXED_TRANSFORM, MIXED_CLASS_NAMES, NUM_MIXED_CLASSES, wafer_array_to_pil
 from src.model import build_model
 from src.gradcam import GradCAM, overlay_heatmap
+from src.risk_score import calculate_risk_score
 
 THRESHOLD = 0.5  # Sigmoid threshold
 
@@ -156,6 +157,20 @@ def run_mixed_inference(assets: MixedInferenceAssets, pil: Image.Image) -> dict:
         overlay_pil.save(buf, format="PNG")
         gradcam_overlay_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
+    max_risk = 0
+    worst_action = "MONITOR"
+    if not predicted_indices:
+        pass # stays 0, MONITOR
+    else:
+        # Check all defects
+        for i in predicted_indices:
+            cls_name = MIXED_CLASS_NAMES[i]
+            conf = float(probs[i])
+            risk, act = calculate_risk_score(cls_name, conf)
+            if risk > max_risk:
+                max_risk = risk
+                worst_action = act
+
     return {
         "detected_defects":    detected_defects,
         "defect_count":        len(detected_defects),
@@ -164,5 +179,7 @@ def run_mixed_inference(assets: MixedInferenceAssets, pil: Image.Image) -> dict:
             MIXED_CLASS_NAMES[i]: round(float(probs[i]), 4)
             for i in range(len(MIXED_CLASS_NAMES))
         },
+        "risk_score":          max_risk,
+        "action":              worst_action,
         "gradcam_png_base64": gradcam_overlay_b64,
     }
