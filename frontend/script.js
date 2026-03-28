@@ -973,6 +973,202 @@ document.addEventListener("DOMContentLoaded", () => {
         pdf.save(`wafermap_history_${new Date().toISOString().slice(0, 10)}.pdf`);
     }
 
+    // ===================================================
+    // ===== PERFORMANCE METRICS TAB =====
+    // ===================================================
+
+    // --- Raw metrics data (from reports/*.json) ---
+    const SINGLE_METRICS = {
+        test_accuracy: 88.57,
+        macro_f1: 0.8826,
+        best_val_accuracy: 86.71,
+        training_epochs: 10,
+        train_acc: [0.241, 0.346, 0.420, 0.591, 0.710, 0.804, 0.846, 0.862, 0.872, 0.877],
+        val_acc:   [0.304, 0.386, 0.478, 0.645, 0.783, 0.838, 0.862, 0.865, 0.867, 0.865],
+        per_class: {
+            "Center":    { precision: 0.869,  recall: 0.8795, f1: 0.8743, support: 83 },
+            "Donut":     { precision: 0.9346, recall: 0.9346, f1: 0.9346, support: 107 },
+            "Edge-Loc":  { precision: 0.8447, recall: 0.8614, f1: 0.8529, support: 101 },
+            "Edge-Ring": { precision: 0.9703, recall: 0.9333, f1: 0.9515, support: 105 },
+            "Loc":       { precision: 0.7808, recall: 0.6951, f1: 0.7355, support: 82 },
+            "Near-Full": { precision: 0.8333, recall: 1.0,    f1: 0.9091, support: 30 },
+            "Random":    { precision: 0.8879, recall: 0.9035, f1: 0.8957, support: 114 },
+            "Scratch":   { precision: 0.8667, recall: 0.91,   f1: 0.8878, support: 100 },
+            "None":      { precision: 0.9151, recall: 0.8899, f1: 0.9023, support: 109 }
+        }
+    };
+
+    const MIXED_METRICS = {
+        macro_f1: 0.8806,
+        hamming_loss: 0.0793,
+        best_val_f1: 0.8514,
+        epochs_run: 10,
+        train_f1:  [0.360, 0.524, 0.608, 0.658, 0.734, 0.787, 0.822, 0.842, 0.860, 0.857],
+        val_f1:    [0.464, 0.624, 0.642, 0.693, 0.745, 0.783, 0.802, 0.819, 0.851, 0.843],
+        val_hamming: [0.352, 0.271, 0.255, 0.200, 0.164, 0.120, 0.103, 0.096, 0.086, 0.086],
+        per_class: {
+            "Center":    { precision: 1.0,    recall: 0.9915, f1: 0.9957, support: 117 },
+            "Donut":     { precision: 1.0,    recall: 1.0,    f1: 1.0,    support: 120 },
+            "Edge-Loc":  { precision: 0.6149, recall: 0.8492, f1: 0.7133, support: 126 },
+            "Edge-Ring": { precision: 0.8024, recall: 1.0,    f1: 0.8904, support: 134 },
+            "Loc":       { precision: 0.9286, recall: 0.8387, f1: 0.8814, support: 186 },
+            "Near-Full": { precision: 0.6,    recall: 1.0,    f1: 0.75,   support: 6 },
+            "Random":    { precision: 0.7162, recall: 0.9425, f1: 0.8139, support: 174 },
+            "Scratch":   { precision: 1.0,    recall: 1.0,    f1: 1.0,    support: 12 }
+        }
+    };
+
+    const chartDefaults = {
+        grid: 'rgba(255,255,255,0.06)',
+        tick: '#888',
+        font: "'Inter', sans-serif"
+    };
+
+    function makeBarChart(canvasId, labels, values, label, colorFn) {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        const colors = values.map(colorFn);
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label,
+                    data: values,
+                    backgroundColor: colors,
+                    borderColor: colors.map(c => c.replace('0.75', '1')),
+                    borderWidth: 1,
+                    borderRadius: 5,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${(ctx.parsed.y * 100).toFixed(1)}%`
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: chartDefaults.grid }, ticks: { color: chartDefaults.tick, font: { family: chartDefaults.font, size: 11 } } },
+                    y: {
+                        min: 0.5, max: 1,
+                        grid: { color: chartDefaults.grid },
+                        ticks: { color: chartDefaults.tick, callback: v => (v * 100).toFixed(0) + '%', font: { family: chartDefaults.font } }
+                    }
+                }
+            }
+        });
+    }
+
+    function makeLineChart(canvasId, epochs, datasets) {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        const labels = Array.from({ length: epochs }, (_, i) => `E${i + 1}`);
+        new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#ccc', font: { family: chartDefaults.font, size: 11 } } } },
+                scales: {
+                    x: { grid: { color: chartDefaults.grid }, ticks: { color: chartDefaults.tick, font: { family: chartDefaults.font } } },
+                    y: {
+                        min: 0, max: 1,
+                        grid: { color: chartDefaults.grid },
+                        ticks: { color: chartDefaults.tick, callback: v => (v * 100).toFixed(0) + '%', font: { family: chartDefaults.font } }
+                    }
+                }
+            }
+        });
+    }
+
+    function f1Color(f1) {
+        if (f1 >= 0.92) return 'rgba(46,204,113,0.75)';
+        if (f1 >= 0.85) return 'rgba(130,100,255,0.75)';
+        if (f1 >= 0.75) return 'rgba(245,176,65,0.75)';
+        return 'rgba(231,76,60,0.75)';
+    }
+
+    function fillMetricsTable(tableId, perClass) {
+        const tbody = document.querySelector(`#${tableId} tbody`);
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        Object.entries(perClass).forEach(([cls, m]) => {
+            const f1Pct = (m.f1 * 100).toFixed(1);
+            const col = f1Color(m.f1);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="cls-name">${cls}</td>
+                <td>${(m.precision * 100).toFixed(1)}%</td>
+                <td>${(m.recall * 100).toFixed(1)}%</td>
+                <td style="font-weight:700; color:${col.replace('0.75','1')}">${f1Pct}%</td>
+                <td style="color:var(--text-sec)">${m.support}</td>
+                <td class="f1-bar-wrap">
+                    <div class="f1-mini-bar">
+                        <div class="f1-mini-fill" style="width:${f1Pct}%; background:${col.replace('0.75','1')}"></div>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    let chartsBuilt = false;
+
+    function buildMetricsCharts() {
+        if (chartsBuilt) return;
+        chartsBuilt = true;
+
+        // -- Single F1 bar --
+        const singleClasses = Object.keys(SINGLE_METRICS.per_class);
+        const singleF1s = singleClasses.map(c => SINGLE_METRICS.per_class[c].f1);
+        makeBarChart('singleF1Chart', singleClasses, singleF1s, 'F1 Score', f1Color);
+
+        // -- Single Acc line --
+        makeLineChart('singleAccChart', 10, [
+            { label: 'Train Accuracy', data: SINGLE_METRICS.train_acc, borderColor: 'hsl(250,90%,65%)', backgroundColor: 'hsla(250,90%,65%,0.1)', tension: 0.4, fill: true, pointRadius: 3 },
+            { label: 'Val Accuracy',   data: SINGLE_METRICS.val_acc,   borderColor: '#2ecc71',           backgroundColor: 'rgba(46,204,113,0.1)',   tension: 0.4, fill: true, pointRadius: 3 }
+        ]);
+
+        // -- Mixed F1 bar --
+        const mixedClasses = Object.keys(MIXED_METRICS.per_class);
+        const mixedF1s = mixedClasses.map(c => MIXED_METRICS.per_class[c].f1);
+        makeBarChart('mixedF1Chart', mixedClasses, mixedF1s, 'F1 Score', f1Color);
+
+        // -- Mixed val F1 + hamming line --
+        makeLineChart('mixedValChart', 10, [
+            { label: 'Val F1',         data: MIXED_METRICS.val_f1,      borderColor: '#2ecc71',           backgroundColor: 'rgba(46,204,113,0.1)',   tension: 0.4, fill: true, pointRadius: 3 },
+            { label: 'Hamming Loss',   data: MIXED_METRICS.val_hamming,  borderColor: '#e74c3c',           backgroundColor: 'rgba(231,76,60,0.1)',    tension: 0.4, fill: false, pointRadius: 3, borderDash: [4,3] }
+        ]);
+
+        // -- Tables --
+        fillMetricsTable('singleMetricsTable', SINGLE_METRICS.per_class);
+        fillMetricsTable('mixedMetricsTable', MIXED_METRICS.per_class);
+    }
+
+    // Engine switcher
+    document.querySelectorAll('.engine-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.engine-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const eng = btn.dataset.engine;
+            document.getElementById('metrics-single').style.display = eng === 'single' ? '' : 'none';
+            document.getElementById('metrics-mixed').style.display  = eng === 'mixed'  ? '' : 'none';
+        });
+    });
+
+    // Build charts when tab is first opened
+    const origTabClick = (link) => {
+        if (link.dataset.target === 'tab-metrics') buildMetricsCharts();
+    };
+    document.querySelectorAll('.tab-link').forEach(link => {
+        link.addEventListener('click', () => origTabClick(link));
+    });
+
     // ===== INIT =====
     updateHistoryBadge();
 });
+
