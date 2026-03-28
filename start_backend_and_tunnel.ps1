@@ -22,7 +22,7 @@ Start-Sleep -Seconds 3
 
 Write-Host "Starting Ngrok tunnel..."
 # Start ngrok process in a new window
-Start-Process ngrok -ArgumentList "http 8000"
+Start-Process powershell -ArgumentList "-NoExit -Command `"ngrok http 8000`""
 
 Write-Host ""
 Write-Host "✅ Backend & Tunnel started!" -ForegroundColor Green

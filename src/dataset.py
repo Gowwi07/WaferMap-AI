@@ -25,7 +25,7 @@ ROOT_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(ROOT_DIR, "data")
 PKL_PATH   = os.path.join(DATA_DIR, "LSWMD.pkl")
 IMG_SIZE   = 224   # Full resolution for GPU training (matches EfficientNet pretrain)
-MAX_SAMPLES_PER_CLASS = None  # No cap — use ALL available data (GPU can handle it)
+MAX_SAMPLES_PER_CLASS = 5000  # Cap majority class for 5x faster training 
 
 # The 9 defect classes (index = class label for the model)
 CLASS_NAMES = [

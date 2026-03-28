@@ -107,6 +107,16 @@
                     <p>Upload up to 20 wafer map images for batch AI analysis, Grad-CAM localization, and yield risk assessment.</p>
                 </div>
 
+                <!-- Analysis Mode Toggle -->
+                <div class="mode-toggle-container fade-in" style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1rem;">
+                    <span class="mode-label active" id="labelSingle">Single Defect (811K)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="analysisModeToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span class="mode-label" id="labelMulti">Multi-Defect (MixedWM38)</span>
+                </div>
+
                 <!-- Upload Zone -->
                 <div class="upload-zone glass-panel" id="dropZone">
                     <!-- Empty State -->

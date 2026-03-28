@@ -75,6 +75,6 @@ The Streamlit app now shows:
 - saved training metrics table + confusion matrix
 
 ## Team
-- Gowtham R (Leader)
+- Gowtham R 
 - Mohan Kumar G
 - PSG Institute of Technology and Applied Research

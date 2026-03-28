@@ -10,7 +10,7 @@ echo Wait 3 seconds for server to spin up...
 timeout /t 3 /nobreak >nul
 
 echo Starting Ngrok tunnel...
-start "Ngrok Tunnel" ngrok http 8000
+start "Ngrok Tunnel" cmd /k "ngrok http 8000"
 
 echo.
 echo ✅ Backend ^& Tunnel started!

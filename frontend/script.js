@@ -167,6 +167,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("resetBtn");
     const runInferenceBtn = document.getElementById("runInferenceBtn");
 
+    // Analysis Mode Toggle
+    const analysisModeToggle = document.getElementById("analysisModeToggle");
+    const labelSingle = document.getElementById("labelSingle");
+    const labelMulti = document.getElementById("labelMulti");
+
+    analysisModeToggle.addEventListener("change", () => {
+        if (analysisModeToggle.checked) {
+            labelSingle.classList.remove("active");
+            labelMulti.classList.add("active");
+        } else {
+            labelSingle.classList.add("active");
+            labelMulti.classList.remove("active");
+        }
+    });
+
     // Results
     const resultsZone = document.getElementById("resultsZone");
     const progressLabel = document.getElementById("progressLabel");
@@ -262,9 +277,12 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             try {
+                const isMultiMode = analysisModeToggle.checked;
+                const endpoint = isMultiMode ? "/predict_multi" : "/predict";
+                
                 const fd = new FormData();
                 fd.append("image", file);
-                const resp = await fetch(`${apiUrl}/predict`, {
+                const resp = await fetch(`${apiUrl}${endpoint}`, {
                     method: "POST",
                     body: fd,
                     headers: { "ngrok-skip-browser-warning": "true" }
@@ -281,7 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
                 
-                if (data.mode === "multi") {
+                if (isMultiMode) {
                     appendMultiResultRow(file.name, origUrl, data);
                 } else {
                     appendResultRow(file.name, origUrl, data);
@@ -355,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function appendResultRow(filename, origUrl, data) {
-        const cls = data.class || "Unknown";
+        const cls = data.predicted_class || "Unknown";
         const conf = data.confidence || 0;
         const risk = data.risk_score !== undefined ? data.risk_score : 0;
         const action = data.action || "MONITOR";

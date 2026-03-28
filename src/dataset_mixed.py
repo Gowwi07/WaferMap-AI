@@ -36,11 +36,13 @@ MIXED_CLASS_NAMES = [
 NUM_MIXED_CLASSES = len(MIXED_CLASS_NAMES)  # 8
 
 # ── Image transform ────────────────────────────────────────────────────────────
-# The map values are 0, 1, 2 so we scale to [0, 1] and treat as grayscale→RGB
+# Ensure we always produce a 3-channel RGB tensor for EfficientNet
 MIXED_TRANSFORM = transforms.Compose([
-    transforms.Resize((IMG_SIZE, IMG_SIZE), interpolation=transforms.InterpolationMode.NEAREST),
-    transforms.ToTensor(),                       # [0,255] → [0,1]
-    transforms.Lambda(lambda t: t.repeat(3, 1, 1)),  # 1-channel → 3-channel
+    transforms.Resize((IMG_SIZE, IMG_SIZE), interpolation=transforms.InterpolationMode.BILINEAR),
+    transforms.ToTensor(),
+    # Detect if we have 1 channel (grayscale map) and expand to 3. 
+    # If already 3 (RGB photo), don't touch it.
+    transforms.Lambda(lambda t: t.expand(3, -1, -1) if t.shape[0] == 1 else t[:3, :, :]),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225]),
 ])

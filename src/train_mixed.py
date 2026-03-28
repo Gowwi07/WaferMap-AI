@@ -140,13 +140,27 @@ def main():
     history = {"train_loss": [], "train_f1": [], "val_loss": [], "val_f1": [], "val_hamming": []}
     best_val_f1 = 0.0
     no_improve  = 0
+    
+    # Update max epochs for a more thorough run
+    MAX_EPOCHS = 10 
+    print(f"\n[Train] Starting {MAX_EPOCHS}-epoch run (frozen backbone for 3 epochs)\n")
 
-    print(f"\n[Train] Starting {EPOCHS}-epoch run (early stop patience={EARLY_STOP})\n")
-
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(1, MAX_EPOCHS + 1):
         ep_start = time.time()
+        
+        # Solution 4: Stage 1 Freezing (Epochs 1-3)
+        if hasattr(model, "features"):
+            if epoch <= 3:
+                for param in model.features.parameters():
+                    param.requires_grad = False
+                print(f"  [Stage 1] Backbone Frozen (Epoch {epoch})")
+            else:
+                for param in model.features.parameters():
+                    param.requires_grad = True
+                if epoch == 4:
+                    print(f"  [Stage 2] Backbone Unfrozen (Epoch {epoch})")
 
-        train_loss, train_f1 = train_epoch(model, train_loader, criterion, optimizer, epoch, EPOCHS)
+        train_loss, train_f1 = train_epoch(model, train_loader, criterion, optimizer, epoch, MAX_EPOCHS)
         val_loss, val_f1, val_hamming, _, _ = eval_epoch(model, val_loader, criterion, "Val")
         scheduler.step()
 

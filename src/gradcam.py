@@ -67,7 +67,7 @@ class GradCAM:
         self.model.zero_grad()
         # We only want the gradient for the chosen class, so we create a dummy "1" for it
         class_loss = output[0, class_idx]
-        class_loss.backward()
+        class_loss.backward(retain_graph=True)
 
         # 3. Combine gradients and activations
         # We take the global average of the gradients

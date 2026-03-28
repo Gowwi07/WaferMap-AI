@@ -50,7 +50,7 @@ METRICS_PATH = os.path.join(REPORT_DIR, "phase2_metrics.json")
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 # GPU-optimized settings matching PPT specification for >96% accuracy
-EPOCHS       = 30    # Max epochs — early stopping will kick in sooner if val plateaus
+EPOCHS       = 10    # Reduced for fast fine-tuning with new fixes 
 BATCH_SIZE   = 32    # Larger batch for GPU throughput
 LR_BACKBONE  = 1e-4  # Adam LR matching PPT spec
 LR_HEAD      = 1e-3  # Larger LR for classifier head
@@ -283,34 +283,44 @@ def main():
     model = model.to(DEVICE)
 
     # ── 3. Loss function ──────────────────────────────────────────────────────
-    # CrossEntropyLoss: measures how wrong our predictions are.
-    # weight= gives rare classes higher penalty (class imbalance fix)
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(DEVICE))
+    # Solution 1: CrossEntropyLoss with weighted classes and label smoothing
+    # weight= gives rare classes higher penalty.
+    # label_smoothing=0.1 prevents the model from being "too certain" when wrong.
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(DEVICE), label_smoothing=0.1)
 
     # ── 4. Optimizer ──────────────────────────────────────────────────────────
     # We use different learning rates:
-    # - Backbone (pretrained EfficientNet layers): small LR (already well-trained)
-    # - Classifier head (our new layers): larger LR (learning from scratch)
-    backbone_params   = [p for n, p in model.named_parameters()
-                         if "classifier" not in n]
-    classifier_params = [p for n, p in model.named_parameters()
-                         if "classifier" in n]
+    # - Backbone (pretrained EfficientNet layers): small LR
+    # - Classifier head (our new layers): larger LR
+    backbone_params   = [p for n, p in model.named_parameters() if "classifier" not in n]
+    classifier_params = [p for n, p in model.named_parameters() if "classifier" in n]
 
     optimizer = optim.AdamW([
         {"params": backbone_params,   "lr": LR_BACKBONE},
         {"params": classifier_params, "lr": LR_HEAD},
     ], weight_decay=1e-4)
 
-    # Scheduler: slowly reduce LR over epochs (cosine schedule)
     scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     # ── 5. Training loop ──────────────────────────────────────────────────────
     history    = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
-    epochs_no_improve = 0  # Early stopping counter
+    epochs_no_improve = 0 
 
     for epoch in range(1, EPOCHS + 1):
         ep_start = time.time()
+
+        # Solution 4: Stage 1 Freezing (Epochs 1-3)
+        # We freeze the backbone to stabilize the classifier head first.
+        if epoch <= 3:
+            for param in model.features.parameters():
+                param.requires_grad = False
+            print(f"\n  [Stage 1] Backbone Frozen - Training Head Only (Epoch {epoch})")
+        else:
+            for param in model.features.parameters():
+                param.requires_grad = True
+            if epoch == 4:
+                print(f"\n  [Stage 2] Backbone Unfrozen - Fine-tuning All Layers (Epoch {epoch})")
 
         train_loss, train_acc = train_one_epoch(
             model, train_loader, criterion, optimizer, epoch, EPOCHS
