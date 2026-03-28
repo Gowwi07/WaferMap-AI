@@ -55,26 +55,36 @@ def load_mixed_assets() -> MixedInferenceAssets | None:
 
 def photo_to_wafer_array(pil_img: Image.Image) -> np.ndarray:
     """
-    Convert a real wafer photograph → 52×52 int array (values 0, 1, 2).
-
-    Pipeline:
-      1. Convert to grayscale
-      2. Resize to 52×52
-      3. Adaptive threshold to segment the circular die region
-      4. Map pixel ranges → {0: background, 1: pass-die, 2: fail-die}
+    Convert real photo -> 52x52 int array (0,1,2).
+    Uses median-based anomaly detection for robustness.
     """
     gray = np.array(pil_img.convert("L"))
     gray_small = cv2.resize(gray, (52, 52), interpolation=cv2.INTER_AREA)
 
-    # Otsu threshold to separate wafer circle from background
-    _, bg_mask = cv2.threshold(gray_small, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # 1. Circle Segmentation
+    _, mask = cv2.threshold(gray_small, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Ensure wafer is foreground (mask=255)
+    if mask[26, 26] == 0:
+        mask = 255 - mask
+    
+    wafer_pixels = gray_small[mask > 0]
+    if len(wafer_pixels) == 0:
+        return np.zeros_like(gray_small, dtype=np.int32)
 
-    # Within the wafer circle, use a second threshold to distinguish pass/fail
-    mean_val = gray_small[bg_mask > 0].mean() if bg_mask.sum() > 0 else 128.0
+    # 2. Outlier Detection
+    median_val = np.median(wafer_pixels)
+    std_val = wafer_pixels.std()
+
     result = np.zeros_like(gray_small, dtype=np.int32)
-    result[bg_mask == 0]  = 0  # Background — outside circular wafer area
-    result[(bg_mask > 0) & (gray_small >= mean_val)] = 1   # Bright → pass die
-    result[(bg_mask > 0) & (gray_small <  mean_val)] = 2   # Dark  → fail die (defect)
+    result[mask == 255] = 1 # Default to Pass
+
+    # Only mark defects if there is significant variation
+    # Increased tolerance to 20.0 to handle camera noise/lighting gradients
+    if std_val > 20.0:
+        # Mark pixels far from median as Fail (2)
+        # We use a 1.5 * std threshold to pick up ONLY clear defects
+        diff = np.abs(gray_small.astype(np.float32) - median_val)
+        result[(mask == 255) & (diff > 1.5 * std_val)] = 2
 
     return result
 
