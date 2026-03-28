@@ -19,7 +19,7 @@ from torchvision import transforms
 from dataclasses import dataclass
 
 ROOT_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(ROOT_DIR, "models", "efficientnet_mixed.pth")
+MODEL_PATH = os.path.join(ROOT_DIR, "models", "mixed_model.pth")
 
 from src.dataset_mixed import MIXED_TRANSFORM, MIXED_CLASS_NAMES, NUM_MIXED_CLASSES, wafer_array_to_pil
 from src.model import build_model

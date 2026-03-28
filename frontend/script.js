@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
             link.classList.add("active");
             const target = document.getElementById(link.dataset.target);
             if (target) target.classList.add("active");
+            if (link.dataset.target === "tab-history") renderHistoryList();
         });
     });
 
@@ -72,12 +73,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const confidencePct = (confidence * 100).toFixed(1);
         document.getElementById("explanationSubtitle").innerText = `${className} defect · ${confidencePct}% confidence`;
 
-        // Determine risk colour
         let riskColor = "var(--success)";
         if (action === "STOP LOT" || action === "STOP") riskColor = "var(--danger)";
         else if (action === "INVESTIGATE") riskColor = "var(--warning)";
 
-        // Build explanation steps specific to the defect type + action
         const defectExplanations = {
             "Center": "The defect is concentrated at the wafer center, typically caused by systematic gas distribution or plasma non-uniformity during CVD or etch processes.",
             "Donut": "A ring-like defect surrounding the center, often caused by temperature gradients or irregular photoresist spinning at the wafer hub.",
@@ -167,7 +166,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("resetBtn");
     const runInferenceBtn = document.getElementById("runInferenceBtn");
 
-    // Analysis Mode Toggle
     const analysisModeToggle = document.getElementById("analysisModeToggle");
     const labelSingle = document.getElementById("labelSingle");
     const labelMulti = document.getElementById("labelMulti");
@@ -182,14 +180,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Results
     const resultsZone = document.getElementById("resultsZone");
     const progressLabel = document.getElementById("progressLabel");
     const progressCount = document.getElementById("progressCount");
     const progressFill = document.getElementById("progressFill");
     const batchResultsContainer = document.getElementById("batchResultsContainer");
+    const resultsControls = document.getElementById("resultsControls");
 
     let currentFiles = [];
+    // Stores the raw result data objects for the current session
+    let currentSessionResults = [];
 
     selectFileBtn.addEventListener("click", (e) => { e.preventDefault(); fileInput.click(); });
     dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
@@ -227,7 +227,9 @@ document.addEventListener("DOMContentLoaded", () => {
         uploadEmpty.classList.add("hidden");
         uploadPreview.classList.remove("hidden");
         resultsZone.classList.add("hidden");
+        resultsControls.style.display = "none";
         batchResultsContainer.innerHTML = "";
+        currentSessionResults = [];
     }
 
     resetBtn.addEventListener("click", () => {
@@ -238,15 +240,18 @@ document.addEventListener("DOMContentLoaded", () => {
         uploadPreview.classList.add("hidden");
         uploadEmpty.classList.remove("hidden");
         resultsZone.classList.add("hidden");
+        resultsControls.style.display = "none";
+        currentSessionResults = [];
     });
 
     // ===== BATCH INFERENCE =====
     runInferenceBtn.addEventListener("click", async () => {
         if (currentFiles.length === 0) return;
 
-        // Disable button during run
         runInferenceBtn.disabled = true;
         runInferenceBtn.textContent = "⏳ Running...";
+        resultsControls.style.display = "none";
+        currentSessionResults = [];
 
         resultsZone.classList.remove("hidden");
         batchResultsContainer.innerHTML = "";
@@ -269,7 +274,6 @@ document.addEventListener("DOMContentLoaded", () => {
         for (let i = 0; i < total; i++) {
             const file = currentFiles[i];
 
-            // Read file as data URL for original display
             const origUrl = await new Promise(res => {
                 const r = new FileReader();
                 r.onload = e => res(e.target.result);
@@ -279,7 +283,7 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const isMultiMode = analysisModeToggle.checked;
                 const endpoint = isMultiMode ? "/predict_multi" : "/predict";
-                
+
                 const fd = new FormData();
                 fd.append("image", file);
                 const resp = await fetch(`${apiUrl}${endpoint}`, {
@@ -288,7 +292,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     headers: { "ngrok-skip-browser-warning": "true" }
                 });
                 if (!resp.ok) {
-                    // Try to get the friendly detail message from a FastAPI HTTPException
                     let errMsg = `HTTP ${resp.status}`;
                     try {
                         const errBody = await resp.json();
@@ -298,13 +301,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error);
-                
+
+                // Store result for history/PDF
+                currentSessionResults.push({ filename: file.name, origUrl, data, isMulti: isMultiMode, error: null });
+
                 if (isMultiMode) {
                     appendMultiResultRow(file.name, origUrl, data);
                 } else {
                     appendResultRow(file.name, origUrl, data);
                 }
             } catch (err) {
+                currentSessionResults.push({ filename: file.name, origUrl, data: null, error: err.message });
                 appendErrorRow(file.name, origUrl, err.message);
             }
 
@@ -314,14 +321,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         runInferenceBtn.disabled = false;
         runInferenceBtn.textContent = "✨ Analyze All";
+        // Show action buttons after run
+        if (currentSessionResults.length > 0) {
+            resultsControls.style.display = "flex";
+        }
     });
 
+    // ===== RESULT ROW BUILDERS =====
     function appendMultiResultRow(filename, origUrl, data) {
         const defects = data.detected_defects || [];
         const confMap = data.confidence_per_class || {};
         const camUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : null;
-        
-        // Styling based on cleanliness
+
         const isClean = data.is_clean;
         const rowClass = isClean ? "row-ok" : "row-danger";
         const badgeClass = isClean ? "ok" : "stop";
@@ -331,12 +342,10 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<div class="batch-img-wrap"><img src="${camUrl}" alt="Grad-CAM" /><div class="img-label">CAM (Max Conf)</div></div>`
             : `<div class="batch-img-wrap" style="display:flex;align-items:center;justify-content:center;opacity:0.4;font-size:0.7rem;color:#888;">No CAM</div>`;
 
-        // Format defect tags
-        let defTags = isClean 
+        let defTags = isClean
             ? `<span class="action-badge ok" style="font-size:0.7rem;">None</span>`
             : defects.map(d => `<span class="action-badge stop" style="font-size:0.7rem; margin-right:4px; margin-bottom:4px;">${d}</span>`).join("");
-            
-        // Max confidence
+
         let maxConf = 0;
         if (!isClean && defects.length > 0) {
             maxConf = Math.max(...defects.map(d => confMap[d] || 0));
@@ -380,7 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const camUrl = data.gradcam_png_base64 ? `data:image/png;base64,${data.gradcam_png_base64}` : null;
         const confPct = (conf * 100).toFixed(1);
 
-        // Row styling
         const isOk = cls.toLowerCase() === "none";
         const isStop = action === "STOP LOT" || action === "STOP";
         const isWarn = action === "INVESTIGATE";
@@ -444,4 +452,527 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         batchResultsContainer.appendChild(row);
     }
+
+    // ===================================================
+    // ===== HISTORY FEATURE =====
+    // ===================================================
+    const HISTORY_KEY = "wafermap_history";
+    const MAX_HISTORY = 50; // max sessions stored
+
+    function loadHistory() {
+        try {
+            return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        } catch { return []; }
+    }
+
+    function saveHistoryToStorage(history) {
+        try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        } catch (e) {
+            console.warn("History save failed (storage quota?)", e);
+        }
+    }
+
+    function updateHistoryBadge() {
+        const history = loadHistory();
+        const badge = document.getElementById("historySidebarBadge");
+        if (history.length > 0) {
+            badge.textContent = history.length;
+            badge.style.display = "inline-block";
+        } else {
+            badge.style.display = "none";
+        }
+        const countLabel = document.getElementById("historyCountLabel");
+        if (countLabel) countLabel.textContent = `${history.length} session${history.length !== 1 ? "s" : ""} saved`;
+    }
+
+    // Save current session button
+    const saveHistoryBtn = document.getElementById("saveHistoryBtn");
+    saveHistoryBtn.addEventListener("click", () => {
+        if (currentSessionResults.length === 0) return;
+
+        const history = loadHistory();
+        const timestamp = new Date().toISOString();
+        const mode = analysisModeToggle.checked ? "Multi-Defect" : "Single-Defect";
+        const totalWafers = currentSessionResults.length;
+        const defectCount = currentSessionResults.filter(r => {
+            if (r.error) return false;
+            if (r.isMulti) return !r.data.is_clean;
+            return r.data && r.data.predicted_class && r.data.predicted_class.toLowerCase() !== "none";
+        }).length;
+
+        // Serialize results (strip large base64 gradcam to keep storage lean — store first 4 chars as placeholder flag)
+        const serializableResults = currentSessionResults.map(r => {
+            if (!r.data) return r;
+            const d = { ...r.data };
+            if (d.gradcam_png_base64) {
+                d.gradcam_png_base64 = d.gradcam_png_base64.substring(0, 8) + "…TRUNCATED";
+            }
+            return { ...r, data: d };
+        });
+
+        const session = {
+            id: Date.now(),
+            timestamp,
+            mode,
+            totalWafers,
+            defectCount,
+            results: serializableResults
+        };
+
+        history.unshift(session);
+        if (history.length > MAX_HISTORY) history.splice(MAX_HISTORY);
+        saveHistoryToStorage(history);
+        updateHistoryBadge();
+
+        // Visual feedback
+        saveHistoryBtn.textContent = "✅ Saved!";
+        saveHistoryBtn.disabled = true;
+        setTimeout(() => {
+            saveHistoryBtn.textContent = "🕓 Save to History";
+            saveHistoryBtn.disabled = false;
+        }, 2000);
+    });
+
+    function renderHistoryList() {
+        const history = loadHistory();
+        const historyList = document.getElementById("historyList");
+        const historyEmpty = document.getElementById("historyEmpty");
+        updateHistoryBadge();
+
+        if (history.length === 0) {
+            historyList.innerHTML = "";
+            historyEmpty.style.display = "block";
+            return;
+        }
+        historyEmpty.style.display = "none";
+        historyList.innerHTML = "";
+
+        history.forEach(session => {
+            const date = new Date(session.timestamp);
+            const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+            const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+
+            const cleanCount = session.totalWafers - session.defectCount;
+            const defectRatio = session.totalWafers > 0 ? (session.defectCount / session.totalWafers * 100).toFixed(0) : 0;
+
+            const card = document.createElement("div");
+            card.className = "history-card glass-panel";
+            card.innerHTML = `
+                <div class="history-card-header">
+                    <div class="history-card-meta">
+                        <span class="history-mode-badge ${session.mode === "Multi-Defect" ? "multi" : "single"}">${session.mode}</span>
+                        <span class="history-date">${dateStr} · ${timeStr}</span>
+                    </div>
+                    <div class="history-card-actions">
+                        <button class="btn btn-secondary history-view-btn" data-id="${session.id}" style="padding:0.4rem 0.9rem; font-size:0.82rem;">🔍 View</button>
+                        <button class="btn btn-secondary history-export-btn" data-id="${session.id}" style="padding:0.4rem 0.9rem; font-size:0.82rem;">📄 PDF</button>
+                        <button class="history-delete-btn" data-id="${session.id}" title="Delete session">🗑</button>
+                    </div>
+                </div>
+                <div class="history-card-stats">
+                    <div class="history-stat">
+                        <span class="history-stat-value">${session.totalWafers}</span>
+                        <span class="history-stat-label">Wafers</span>
+                    </div>
+                    <div class="history-stat">
+                        <span class="history-stat-value" style="color:var(--danger);">${session.defectCount}</span>
+                        <span class="history-stat-label">Defects</span>
+                    </div>
+                    <div class="history-stat">
+                        <span class="history-stat-value" style="color:var(--success);">${cleanCount}</span>
+                        <span class="history-stat-label">Clean</span>
+                    </div>
+                    <div class="history-stat">
+                        <div class="history-yield-bar">
+                            <div class="history-yield-fill" style="width: ${100 - defectRatio}%"></div>
+                        </div>
+                        <span class="history-stat-label">${100 - defectRatio}% Yield</span>
+                    </div>
+                </div>
+            `;
+            historyList.appendChild(card);
+        });
+
+        // Bind view buttons
+        historyList.querySelectorAll(".history-view-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const session = history.find(s => s.id == btn.dataset.id);
+                if (session) openHistoryDetail(session);
+            });
+        });
+
+        // Bind export buttons
+        historyList.querySelectorAll(".history-export-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const session = history.find(s => s.id == btn.dataset.id);
+                if (session) exportSessionToPdf(session);
+            });
+        });
+
+        // Bind delete buttons
+        historyList.querySelectorAll(".history-delete-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const h = loadHistory().filter(s => s.id != btn.dataset.id);
+                saveHistoryToStorage(h);
+                renderHistoryList();
+            });
+        });
+    }
+
+    // History Detail Modal
+    const historyDetailOverlay = document.getElementById("historyDetailOverlay");
+    const closeHistoryDetailBtn = document.getElementById("closeHistoryDetailBtn");
+    closeHistoryDetailBtn.addEventListener("click", () => historyDetailOverlay.classList.remove("active"));
+    historyDetailOverlay.addEventListener("click", (e) => { if (e.target === historyDetailOverlay) historyDetailOverlay.classList.remove("active"); });
+
+    function openHistoryDetail(session) {
+        const date = new Date(session.timestamp);
+        document.getElementById("historyDetailSubtitle").textContent =
+            `${session.mode} · ${date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} ${date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · ${session.totalWafers} wafers`;
+
+        const body = document.getElementById("historyDetailBody");
+        body.innerHTML = "";
+
+        session.results.forEach(r => {
+            const item = document.createElement("div");
+            item.className = "history-detail-item";
+
+            if (r.error) {
+                item.innerHTML = `
+                    <div class="history-detail-thumb" style="background:#111; display:flex; align-items:center; justify-content:center; color:var(--danger); font-size:1.3rem;">⚠️</div>
+                    <div class="history-detail-info">
+                        <div class="history-detail-filename">${r.filename}</div>
+                        <div style="color:var(--danger); font-size:0.82rem; margin-top:3px;">${r.error}</div>
+                    </div>
+                    <span class="action-badge stop" style="flex-shrink:0;">ERROR</span>
+                `;
+            } else if (r.isMulti) {
+                const defects = r.data.detected_defects || [];
+                const isClean = r.data.is_clean;
+                item.innerHTML = `
+                    <div class="history-detail-thumb" style="background:#111; display:flex; align-items:center; justify-content:center; font-size:1.2rem;">${isClean ? "✅" : "🔴"}</div>
+                    <div class="history-detail-info">
+                        <div class="history-detail-filename">${r.filename}</div>
+                        <div style="margin-top:4px;">${isClean ? '<span class="action-badge ok" style="font-size:0.7rem;">Clean</span>' : defects.map(d => `<span class="action-badge stop" style="font-size:0.7rem; margin-right:3px;">${d}</span>`).join("")}</div>
+                    </div>
+                    <span class="action-badge ${isClean ? "ok" : "stop"}" style="flex-shrink:0;">${isClean ? "CLEAN" : "DEFECT"}</span>
+                `;
+            } else {
+                const cls = r.data.predicted_class || "Unknown";
+                const conf = ((r.data.confidence || 0) * 100).toFixed(1);
+                const action = r.data.action || "MONITOR";
+                const isStop = action === "STOP LOT" || action === "STOP";
+                const isWarn = action === "INVESTIGATE";
+                const badgeClass = isStop ? "stop" : (isWarn ? "warn" : "ok");
+                item.innerHTML = `
+                    <div class="history-detail-thumb" style="background:#111; display:flex; align-items:center; justify-content:center; font-size:1.2rem;">${cls.toLowerCase() === "none" ? "✅" : "🔴"}</div>
+                    <div class="history-detail-info">
+                        <div class="history-detail-filename">${r.filename}</div>
+                        <div style="font-weight:700; margin-top:2px; color:${cls.toLowerCase() === "none" ? "var(--success)" : "var(--danger)"};">${cls}</div>
+                        <div style="font-size:0.8rem; color:var(--text-sec);">Confidence: ${conf}% · Risk: ${r.data.risk_score ?? "—"}/100</div>
+                    </div>
+                    <span class="action-badge ${badgeClass}" style="flex-shrink:0;">${action}</span>
+                `;
+            }
+            body.appendChild(item);
+        });
+
+        historyDetailOverlay.classList.add("active");
+    }
+
+    // Clear history button
+    document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+        if (confirm("Clear all history? This cannot be undone.")) {
+            saveHistoryToStorage([]);
+            renderHistoryList();
+        }
+    });
+
+    // Export ALL history button
+    document.getElementById("exportAllHistoryBtn").addEventListener("click", () => {
+        const history = loadHistory();
+        if (history.length === 0) { alert("No history to export."); return; }
+        exportAllHistoryToPdf(history);
+    });
+
+    // ===================================================
+    // ===== PDF EXPORT =====
+    // ===================================================
+    const exportPdfBtn = document.getElementById("exportPdfBtn");
+    exportPdfBtn.addEventListener("click", () => {
+        if (currentSessionResults.length === 0) return;
+        const session = {
+            timestamp: new Date().toISOString(),
+            mode: analysisModeToggle.checked ? "Multi-Defect" : "Single-Defect",
+            results: currentSessionResults,
+            totalWafers: currentSessionResults.length,
+            defectCount: currentSessionResults.filter(r => {
+                if (r.error) return false;
+                if (r.isMulti) return !r.data.is_clean;
+                return r.data && r.data.predicted_class && r.data.predicted_class.toLowerCase() !== "none";
+            }).length
+        };
+        exportSessionToPdf(session);
+    });
+
+    function exportSessionToPdf(session) {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+        const pageW = 210, pageH = 297, margin = 15;
+        const contentW = pageW - margin * 2;
+        const date = new Date(session.timestamp);
+        const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+
+        let y = margin;
+
+        // ---- HEADER ----
+        pdf.setFillColor(20, 10, 40);
+        pdf.rect(0, 0, pageW, 40, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(20);
+        pdf.setTextColor(200, 170, 255);
+        pdf.text("⚡ WaferMap AI", margin, 17);
+        pdf.setFontSize(10);
+        pdf.setTextColor(160, 140, 200);
+        pdf.text("Semiconductor Defect Intelligence Report", margin, 25);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        pdf.setTextColor(120, 110, 160);
+        pdf.text(`Generated: ${dateStr} at ${timeStr}  ·  Mode: ${session.mode}`, margin, 33);
+
+        y = 50;
+
+        // ---- SUMMARY BOX ----
+        const cleanCount = session.totalWafers - session.defectCount;
+        const yieldPct = session.totalWafers > 0 ? ((cleanCount / session.totalWafers) * 100).toFixed(1) : "0.0";
+
+        pdf.setFillColor(30, 20, 55);
+        pdf.roundedRect(margin, y, contentW, 30, 4, 4, "F");
+        pdf.setDrawColor(80, 60, 140);
+        pdf.roundedRect(margin, y, contentW, 30, 4, 4, "S");
+
+        const col = contentW / 3;
+        const statY = y + 12;
+        [
+            { label: "Total Wafers", value: session.totalWafers, color: [200, 170, 255] },
+            { label: "Defects Found", value: session.defectCount, color: [231, 76, 60] },
+            { label: "Yield Estimate", value: yieldPct + "%", color: [46, 204, 113] }
+        ].forEach((stat, i) => {
+            const cx = margin + col * i + col / 2;
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(16);
+            pdf.setTextColor(...stat.color);
+            pdf.text(String(stat.value), cx, statY, { align: "center" });
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(8);
+            pdf.setTextColor(160, 140, 200);
+            pdf.text(stat.label, cx, statY + 7, { align: "center" });
+        });
+
+        y += 40;
+
+        // ---- RESULTS TABLE ----
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(200, 170, 255);
+        pdf.text("Analysis Results", margin, y);
+        y += 5;
+
+        // Table header
+        const cols = { file: margin, cls: margin + 65, conf: margin + 120, risk: margin + 150, action: margin + 172 };
+        const rowH = 8;
+        pdf.setFillColor(40, 25, 70);
+        pdf.rect(margin, y, contentW, rowH, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(160, 140, 200);
+        pdf.text("File", cols.file + 2, y + 5.5);
+        pdf.text("Classification", cols.cls, y + 5.5);
+        pdf.text("Confidence", cols.conf, y + 5.5);
+        pdf.text("Risk", cols.risk, y + 5.5);
+        pdf.text("Action", cols.action, y + 5.5);
+        y += rowH;
+
+        session.results.forEach((r, idx) => {
+            if (y + rowH > pageH - margin) {
+                pdf.addPage();
+                y = margin;
+            }
+
+            // Alternating background
+            if (idx % 2 === 0) {
+                pdf.setFillColor(22, 14, 42);
+                pdf.rect(margin, y, contentW, rowH, "F");
+            }
+
+            let clsText = "—", confText = "—", riskText = "—", actionText = "—";
+            let actionColor = [46, 204, 113];
+
+            if (r.error) {
+                clsText = "ERROR"; actionText = "FAILED";
+                actionColor = [231, 76, 60];
+            } else if (r.isMulti) {
+                const defects = (r.data.detected_defects || []);
+                clsText = r.data.is_clean ? "Clean" : defects.slice(0, 3).join(", ") + (defects.length > 3 ? "…" : "");
+                actionText = r.data.is_clean ? "MONITOR" : "STOP";
+                actionColor = r.data.is_clean ? [46, 204, 113] : [231, 76, 60];
+            } else if (r.data) {
+                clsText = r.data.predicted_class || "Unknown";
+                confText = ((r.data.confidence || 0) * 100).toFixed(1) + "%";
+                riskText = String(r.data.risk_score ?? "—");
+                actionText = r.data.action || "MONITOR";
+                const isStop = actionText === "STOP LOT" || actionText === "STOP";
+                const isWarn = actionText === "INVESTIGATE";
+                actionColor = isStop ? [231, 76, 60] : isWarn ? [245, 176, 65] : [46, 204, 113];
+            }
+
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(7);
+            pdf.setTextColor(220, 220, 230);
+
+            // File name (truncate)
+            const maxFilenameWidth = 60;
+            const truncFile = pdf.getStringUnitWidth(r.filename) * 7 / pdf.internal.scaleFactor > maxFilenameWidth
+                ? r.filename.substring(0, 28) + "…"
+                : r.filename;
+
+            pdf.text(truncFile, cols.file + 2, y + 5.5);
+            pdf.text(clsText, cols.cls, y + 5.5);
+            pdf.text(confText, cols.conf, y + 5.5);
+            pdf.text(riskText, cols.risk, y + 5.5);
+
+            pdf.setFont("helvetica", "bold");
+            pdf.setTextColor(...actionColor);
+            pdf.text(actionText, cols.action, y + 5.5);
+
+            // Row separator
+            pdf.setDrawColor(40, 30, 65);
+            pdf.line(margin, y + rowH, margin + contentW, y + rowH);
+
+            y += rowH;
+        });
+
+        y += 8;
+
+        // ---- FOOTER ----
+        if (y + 20 > pageH - margin) { pdf.addPage(); y = margin; }
+        pdf.setDrawColor(80, 60, 140);
+        pdf.line(margin, y, margin + contentW, y);
+        y += 5;
+        pdf.setFont("helvetica", "italic");
+        pdf.setFontSize(8);
+        pdf.setTextColor(100, 90, 140);
+        pdf.text("WaferMap AI · EfficientNet-B0 powered · SanDisk Hackathon 2025", pageW / 2, y + 4, { align: "center" });
+        pdf.text("This report is AI-generated and should be reviewed by a qualified process engineer.", pageW / 2, y + 9, { align: "center" });
+
+        const filename = `wafermap_report_${date.toISOString().slice(0, 10)}.pdf`;
+        pdf.save(filename);
+    }
+
+    function exportAllHistoryToPdf(history) {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        const pageW = 210, pageH = 297, margin = 15;
+        const contentW = pageW - margin * 2;
+
+        // Cover page
+        pdf.setFillColor(10, 5, 25);
+        pdf.rect(0, 0, pageW, pageH, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(28);
+        pdf.setTextColor(180, 140, 255);
+        pdf.text("WaferMap AI", pageW / 2, 90, { align: "center" });
+        pdf.setFontSize(14);
+        pdf.setTextColor(130, 100, 210);
+        pdf.text("Full History Export", pageW / 2, 104, { align: "center" });
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(10);
+        pdf.setTextColor(100, 80, 160);
+        pdf.text(`${history.length} sessions · Exported ${new Date().toLocaleDateString()}`, pageW / 2, 115, { align: "center" });
+
+        history.forEach((session, idx) => {
+            pdf.addPage();
+            let y = margin;
+
+            const date = new Date(session.timestamp);
+            const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+            const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+
+            pdf.setFillColor(20, 10, 40);
+            pdf.rect(0, 0, pageW, 30, "F");
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(13);
+            pdf.setTextColor(200, 170, 255);
+            pdf.text(`Session ${idx + 1} — ${dateStr} at ${timeStr}`, margin, 14);
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(9);
+            pdf.setTextColor(140, 120, 190);
+            pdf.text(`Mode: ${session.mode}  ·  ${session.totalWafers} wafers  ·  ${session.defectCount} defects`, margin, 22);
+
+            y = 40;
+
+            const cleanCount = session.totalWafers - session.defectCount;
+            const yieldPct = session.totalWafers > 0 ? ((cleanCount / session.totalWafers) * 100).toFixed(1) : "0.0";
+
+            // Table header
+            const rowH = 8;
+            pdf.setFillColor(40, 25, 70);
+            pdf.rect(margin, y, contentW, rowH, "F");
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(160, 140, 200);
+            pdf.text("File", margin + 2, y + 5.5);
+            pdf.text("Classification", margin + 65, y + 5.5);
+            pdf.text("Confidence", margin + 120, y + 5.5);
+            pdf.text("Risk", margin + 150, y + 5.5);
+            pdf.text("Action", margin + 172, y + 5.5);
+            y += rowH;
+
+            session.results.forEach((r, i) => {
+                if (y + rowH > pageH - margin) { pdf.addPage(); y = margin; }
+                if (i % 2 === 0) { pdf.setFillColor(22, 14, 42); pdf.rect(margin, y, contentW, rowH, "F"); }
+
+                let cls = "—", conf = "—", risk = "—", action = "—";
+                let ac = [46, 204, 113];
+
+                if (r.error) { cls = "ERROR"; action = "FAILED"; ac = [231, 76, 60]; }
+                else if (r.isMulti) {
+                    const def = (r.data.detected_defects || []);
+                    cls = r.data.is_clean ? "Clean" : def.slice(0, 3).join(", ") + (def.length > 3 ? "…" : "");
+                    action = r.data.is_clean ? "MONITOR" : "STOP";
+                    ac = r.data.is_clean ? [46, 204, 113] : [231, 76, 60];
+                } else if (r.data) {
+                    cls = r.data.predicted_class || "?";
+                    conf = ((r.data.confidence || 0) * 100).toFixed(1) + "%";
+                    risk = String(r.data.risk_score ?? "—");
+                    action = r.data.action || "MONITOR";
+                    const isStop = action === "STOP LOT" || action === "STOP";
+                    ac = isStop ? [231, 76, 60] : action === "INVESTIGATE" ? [245, 176, 65] : [46, 204, 113];
+                }
+
+                pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.setTextColor(220, 220, 230);
+                const fn = r.filename.length > 30 ? r.filename.substring(0, 28) + "…" : r.filename;
+                pdf.text(fn, margin + 2, y + 5.5);
+                pdf.text(cls, margin + 65, y + 5.5);
+                pdf.text(conf, margin + 120, y + 5.5);
+                pdf.text(risk, margin + 150, y + 5.5);
+                pdf.setFont("helvetica", "bold"); pdf.setTextColor(...ac);
+                pdf.text(action, margin + 172, y + 5.5);
+                pdf.setDrawColor(40, 30, 65); pdf.line(margin, y + rowH, margin + contentW, y + rowH);
+                y += rowH;
+            });
+
+            y += 5;
+            pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(46, 204, 113);
+            pdf.text(`Yield: ${yieldPct}% (${cleanCount} clean / ${session.totalWafers} total)`, margin, y + 5);
+        });
+
+        pdf.save(`wafermap_history_${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
+
+    // ===== INIT =====
+    updateHistoryBadge();
 });

@@ -31,19 +31,20 @@ import pickle
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
-# --- 1. CONFIGURATION (Matching PPT exactly) ---
+# --- 1. CONFIGURATION (Quick Config) ---
 BATCH_SIZE = 32
-EPOCHS = 30
-LEARNING_RATE = 1e-4
+EPOCHS = 10
+LEARNING_RATE = 3e-4
 IMG_SIZE = 224
+TOTAL_SAMPLES_LIMIT = 5000
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 CLASS_NAMES = ['Center', 'Donut', 'Edge-Loc', 'Edge-Ring', 'Loc', 'Near-Full', 'Random', 'Scratch', 'None']
 NUM_CLASSES = len(CLASS_NAMES)
 
-print(f"Using device: {device} (Must be CUDA for 2-hour training time!)")
+print(f"Using device: {DEVICE}")
 
-# --- 2. DATA LOADING (Minimal in-memory version for Colab) ---
+# --- 2. DATA LOADING (Subsampled & Stratified) ---
 def load_and_preprocess_data():
     pkl_path = "LSWMD.pkl"
     if not os.path.exists(pkl_path):
@@ -52,23 +53,34 @@ def load_and_preprocess_data():
         os.system("kaggle datasets download -d qingil/wm811k-wafer-map")
         os.system("unzip -o wm811k-wafer-map.zip")
     
-    print("Loading 2GB Pickle file (this requires ~12GB RAM, Colab has 13GB)...")
+    print("Loading Pickle file...")
     df = pd.read_pickle(pkl_path)
-    df = df.drop(['waferIndex', 'trianTestLabel', 'lotName'], axis=1)
     
-    # Filter only labeled data
-    df['failureNum'] = df.failureType.apply(lambda cls: cls[0][0] if len(cls)>0 else 'None')
-    df = df[df['failureNum'] != 'None'] # For simplicity, usually 'None' means unlabelled in some datasets, but here 'none' is a valid defect?
-    
-    # Actually WM-811K has 'none' as a valid defect class, let's remap properly.
-    mapping = {'Center': 0, 'Donut': 1, 'Edge-Loc': 2, 'Edge-Ring': 3, 'Loc': 4, 
-               'Near-full': 5, 'Random': 6, 'Scratch': 7, 'none': 8}
-    
-    df['label'] = df['failureNum'].map(mapping)
+    # Normalize labels
+    def normalize_label(cls):
+        if not cls or len(cls) == 0: return None
+        val = str(cls[0][0])
+        mapping = {
+            'Center': 0, 'Donut': 1, 'Edge-Loc': 2, 'Edge-Ring': 3, 'Loc': 4, 
+            'Near-full': 5, 'Near-Full': 5, 'Random': 6, 'Scratch': 7, 'none': 8, 'None': 8
+        }
+        return mapping.get(val, None)
+
+    df['label'] = df['failureType'].apply(normalize_label)
     df = df.dropna(subset=['label'])
     
+    # --- STRATIFIED SUBSAMPLING (Fix 1: Quick Config) ---
+    if len(df) > TOTAL_SAMPLES_LIMIT:
+        keep_ratio = TOTAL_SAMPLES_LIMIT / len(df)
+        _, df_balanced = train_test_split(
+            df, test_size=keep_ratio, stratify=df["label"], random_state=42
+        )
+        print(f"Stratified subsampling to {len(df_balanced)} samples.")
+    else:
+        df_balanced = df
+    
     # Train test split (70/10/20)
-    train_df, test_val_df = train_test_split(df, test_size=0.3, stratify=df['label'], random_state=42)
+    train_df, test_val_df = train_test_split(df_balanced, test_size=0.3, stratify=df_balanced['label'], random_state=42)
     val_df, test_df = train_test_split(test_val_df, test_size=(2/3), stratify=test_val_df['label'], random_state=42)
     
     return train_df, val_df, test_df

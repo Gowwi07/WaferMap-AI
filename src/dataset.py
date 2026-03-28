@@ -19,13 +19,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms
 from collections import Counter
+from sklearn.model_selection import train_test_split
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 ROOT_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(ROOT_DIR, "data")
 PKL_PATH   = os.path.join(DATA_DIR, "LSWMD.pkl")
 IMG_SIZE   = 224   # Full resolution for GPU training (matches EfficientNet pretrain)
-MAX_SAMPLES_PER_CLASS = 5000  # Cap majority class for 5x faster training 
+# Reduced for "Quick Config" — set to 5000
+TOTAL_SAMPLES_LIMIT = 5000
 
 # The 9 defect classes (index = class label for the model)
 CLASS_NAMES = [
@@ -106,25 +108,26 @@ def load_raw_dataframe():
     print(f"[Dataset] Loaded {len(df):,} records.")
 
     # Normalize labels
-    col = "failureType"
-    df["label"] = df[col].apply(normalize_label)
+    df["label"] = df["failureType"].apply(normalize_label)
     df = df.dropna(subset=["label"])
 
-    # Use all available data (GPU mode — no per-class cap).
-    # WeightedRandomSampler in the DataLoader handles class imbalance.
+    # --- BALANCED SUBSAMPLING (Fix 1: Precision Config) ---
+    # Stratified (proportional) resulted in too few rare samples (4 Near-Fulls).
+    # We now take all minority samples and cap majority to reach balance.
+    SAMPLES_PER_CLASS = 500
     sampled_parts = []
+    
     for cls in CLASS_NAMES:
         cls_df = df[df["label"] == cls]
-        if MAX_SAMPLES_PER_CLASS is not None:
-            n = min(len(cls_df), MAX_SAMPLES_PER_CLASS)
-            sampled_parts.append(cls_df.sample(n=n, random_state=42))
-        else:
-            sampled_parts.append(cls_df)
-
+        # Take all if less than SAMPLES_PER_CLASS, else sample
+        n_to_take = min(len(cls_df), SAMPLES_PER_CLASS)
+        if n_to_take > 0:
+            sampled_parts.append(cls_df.sample(n=n_to_take, random_state=42))
+            
     df_balanced = pd.concat(sampled_parts).sample(frac=1, random_state=42).reset_index(drop=True)
+    print(f"[Dataset] Balanced subsampling to {len(df_balanced):,} total samples.")
 
     counts = df_balanced["label"].value_counts()
-    print(f"[Dataset] GPU full dataset: {len(df_balanced):,} total samples")
     for cls in CLASS_NAMES:
         print(f"           {cls:<12}: {counts.get(cls,0):>6}")
     return df_balanced
@@ -150,9 +153,18 @@ def split_dataframe(df, train_ratio=0.70, val_ratio=0.10):
 TRAIN_TRANSFORM = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
-    transforms.RandomRotation(90),
+    # Use only 90-degree increments as requested (maintains binary pixel structure)
+    transforms.RandomApply([
+        transforms.RandomRotation((90, 90)),
+    ], p=0.25),
+    transforms.RandomApply([
+        transforms.RandomRotation((180, 180)),
+    ], p=0.25),
+    transforms.RandomApply([
+        transforms.RandomRotation((270, 270)),
+    ], p=0.25),
     transforms.ToTensor(),
-    # ImageNet mean/std (used because EfficientNet was pretrained on ImageNet)
+    # ImageNet mean/std
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std =[0.229, 0.224, 0.225]),
 ])

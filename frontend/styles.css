@@ -259,6 +259,99 @@ body {
 .eda-card h4 { font-family: var(--font-heading); margin-bottom: 0.7rem; color: var(--text-primary); font-size: 1rem; }
 .eda-card img { width: 100%; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.8); }
 
+/* ===== RESULTS CONTROLS ===== */
+.results-controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+/* ===== HISTORY SIDEBAR BADGE ===== */
+.history-count-badge {
+    background: var(--primary-accent);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: auto;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* ===== HISTORY CARDS ===== */
+.history-card {
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 0.85rem;
+    transition: border-color 0.2s, transform 0.2s;
+}
+.history-card:hover { border-color: rgba(255,255,255,0.18); transform: translateX(2px); }
+.history-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+.history-card-meta { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.history-mode-badge {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.6px;
+    padding: 3px 10px; border-radius: 20px; text-transform: uppercase;
+}
+.history-mode-badge.single { background: rgba(130, 100, 255, 0.15); color: var(--primary-accent); border: 1px solid rgba(130,100,255,0.3); }
+.history-mode-badge.multi  { background: rgba(46, 204, 113, 0.15); color: var(--success); border: 1px solid rgba(46,204,113,0.3); }
+.history-date { font-size: 0.82rem; color: var(--text-sec); }
+.history-card-actions { display: flex; gap: 0.5rem; align-items: center; }
+.history-delete-btn {
+    background: none; border: none; cursor: pointer; color: var(--text-sec);
+    font-size: 1rem; padding: 4px 8px; border-radius: 6px; transition: color 0.2s, background 0.2s;
+}
+.history-delete-btn:hover { color: var(--danger); background: rgba(231,76,60,0.1); }
+
+.history-card-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+.history-stat { display: flex; flex-direction: column; gap: 2px; }
+.history-stat-value { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.history-stat-label { font-size: 0.72rem; color: var(--text-sec); text-transform: uppercase; letter-spacing: 0.7px; }
+.history-yield-bar { height: 6px; width: 80px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; margin-bottom: 3px; }
+.history-yield-fill { height: 100%; background: linear-gradient(90deg, var(--success), #27ae60); border-radius: 3px; }
+
+.history-empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-sec);
+}
+.history-empty h3 { font-family: var(--font-heading); font-size: 1.4rem; margin-bottom: 0.5rem; color: var(--text-primary); }
+.history-empty p { font-size: 0.95rem; }
+
+/* ===== HISTORY DETAIL MODAL ===== */
+.history-detail-modal { width: 600px; max-width: 95vw; }
+.history-detail-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.8rem 0;
+    border-bottom: 1px solid var(--glass-border);
+}
+.history-detail-item:last-child { border-bottom: none; }
+.history-detail-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+}
+.history-detail-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.history-detail-info { flex: 1; min-width: 0; }
+.history-detail-filename { font-size: 0.82rem; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 900px) {
     .main-content { padding: 1.2rem 1rem; }
@@ -270,4 +363,6 @@ body {
     .content-panel { padding: 1.5rem; }
     .sidebar { position: fixed; top: var(--nav-height); left: 0; height: calc(100vh - var(--nav-height)); z-index: 90; background: rgba(5,5,5,0.95); }
     .sidebar.collapsed { width: var(--sidebar-collapsed); }
+    .history-detail-modal { width: 95vw; }
+    .history-card-header { flex-direction: column; align-items: flex-start; }
 }

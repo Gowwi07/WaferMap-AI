@@ -37,9 +37,10 @@ def run_mixed_audit():
     print(f"[Audit] Testing {len(all_files)} mixed samples...")
     
     for fname in all_files:
-        # Filename format: mixed_Center_Edge-Loc_123.png
+        # Expected format: mixed_Donut_Scratch_123.png
         parts = fname.replace(".png", "").split("_")
-        active_true = parts[1:-1] # Everything between 'mixed' and the ID
+        # Parts are ['mixed', 'Donut', 'Scratch', '123']
+        active_true = parts[1:-1] # Everything between 'mixed' and the numeric ID
         
         # Convert true labels to binary vector
         true_vec = [1 if cls in active_true else 0 for cls in MIXED_CLASS_NAMES]
@@ -48,8 +49,8 @@ def run_mixed_audit():
         pil = Image.open(path).convert("RGB")
         
         res = run_mixed_inference(assets, pil)
-        # res['predictions'] is a list of {'label': '...', 'confidence': ...}
-        pred_names = [p['label'] for p in res.get('predictions', [])]
+        # res['detected_defects'] is a list of strings
+        pred_names = res.get('detected_defects', [])
         pred_vec = [1 if cls in pred_names else 0 for cls in MIXED_CLASS_NAMES]
         
         y_true.append(true_vec)

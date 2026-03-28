@@ -45,18 +45,18 @@ REPORT_DIR = os.path.join(ROOT_DIR, "reports")
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(REPORT_DIR, exist_ok=True)
 
-MODEL_PATH  = os.path.join(MODELS_DIR, "efficientnet_wafer.pth")
+MODEL_PATH  = os.path.join(MODELS_DIR, "wafer_model.pth")
 METRICS_PATH = os.path.join(REPORT_DIR, "phase2_metrics.json")
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 # GPU-optimized settings matching PPT specification for >96% accuracy
-EPOCHS       = 10    # Reduced for fast fine-tuning with new fixes 
-BATCH_SIZE   = 32    # Larger batch for GPU throughput
-LR_BACKBONE  = 1e-4  # Adam LR matching PPT spec
-LR_HEAD      = 1e-3  # Larger LR for classifier head
+EPOCHS       = 10    # Quick Config
+BATCH_SIZE   = 32    # Batch size kept at 32
+LR_BACKBONE  = 1e-4  # Conservative LR for smaller dataset stability
+LR_HEAD      = 1e-4  # Consistent head LR for fine-tuning
 DROPOUT      = 0.3   # 30% dropout for regularization
-NUM_WORKERS  = 0     # MUST BE 0 on Windows to prevent PyTorch DataLoader deadlocks
-EARLY_STOPPING_PATIENCE = 5  # Stop if val_acc doesn't improve for this many epochs
+NUM_WORKERS  = 0     # MUST BE 0 on Windows
+EARLY_STOPPING_PATIENCE = 10 # Disable early stopping for a full 10-epoch run
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Train] Using device: {DEVICE}")

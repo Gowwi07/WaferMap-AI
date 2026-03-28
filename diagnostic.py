@@ -37,16 +37,16 @@ def run_audit():
     print(f"[Audit] Testing {len(all_files)} samples...")
     
     for fname in all_files:
-        # Filename format: wm811k_Donut_123.png
-        parts = fname.split("_")
+        # Expected format: wm811k_Donut_123.png
+        parts = fname.replace(".png", "").split("_")
         if len(parts) < 2: continue
-        true_label = parts[1]
+        true_label = parts[1] # label is the second part
         
         path = os.path.join(sample_dir, fname)
         pil = Image.open(path).convert("RGB")
         
         res = run_inference_with_gradcam(assets, pil)
-        pred_label = res.get("predicted_class", "Error")
+        pred_label = res.get("predicted_class", "Unknown")
         
         y_true.append(true_label)
         y_pred.append(pred_label)

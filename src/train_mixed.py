@@ -27,21 +27,21 @@ from src.dataset_mixed import get_mixed_dataloaders, MIXED_CLASS_NAMES, NUM_MIXE
 from src.model import build_model
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-MODEL_PATH  = os.path.join(ROOT_DIR, "models", "efficientnet_mixed.pth")
+MODEL_PATH  = os.path.join(ROOT_DIR, "models", "mixed_model.pth")
 REPORT_DIR  = os.path.join(ROOT_DIR, "reports")
 METRICS_PATH = os.path.join(REPORT_DIR, "mixed_metrics.json")
 os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
 os.makedirs(REPORT_DIR, exist_ok=True)
 
 # ── Hyperparameters ────────────────────────────────────────────────────────────
-EPOCHS      = 5      # Start with 5, train more if needed
-BATCH_SIZE  = 64     # Larger batch (52×52 → 224×224 is cheaper than real photos)
-LR_BACKBONE = 5e-5   # Conservative backbone LR
-LR_HEAD     = 5e-4   # Faster head LR
-DROPOUT     = 0.4    # Slightly more dropout (multi-label is harder)
+EPOCHS      = 10     # Quick Config
+BATCH_SIZE  = 32     # Matches single-label batch size for consistency
+LR_BACKBONE = 1e-4   # Conservative LR for smaller dataset stability
+LR_HEAD     = 1e-4   # Consistent head LR for fine-tuning
+DROPOUT     = 0.4    # Slightly more dropout for multi-label complexity
 NUM_WORKERS = 0      # Windows safe
 THRESHOLD   = 0.5    # Sigmoid threshold for positive prediction
-EARLY_STOP  = 3      # Early stopping patience
+EARLY_STOP  = 10     # Disable early stopping for full run
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[Train-Multi] Device: {DEVICE}")

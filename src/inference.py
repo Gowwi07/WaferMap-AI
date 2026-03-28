@@ -29,7 +29,7 @@ from src.gradcam import GradCAM, overlay_heatmap
 from src.risk_score import calculate_risk_score
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(ROOT_DIR, "models", "efficientnet_wafer.pth")
+MODEL_PATH = os.path.join(ROOT_DIR, "models", "wafer_model.pth")
 
 # Transform must match what was used in training (dataset.py EVAL_TRANSFORM)
 EVAL_TRANSFORM = transforms.Compose([

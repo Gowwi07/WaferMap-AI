@@ -83,12 +83,26 @@ def get_mixed_dataloaders(batch_size=64, num_workers=0, val_ratio=0.1, test_rati
     N = len(arrays)
     print(f"[MixedDataset] Loaded {N:,} samples with {NUM_MIXED_CLASSES} label types.")
 
-    # Label statistics
-    for i, name in enumerate(MIXED_CLASS_NAMES):
-        count = labels[:, i].sum()
-        print(f"  {name:<12}: {int(count):>6} ({count/N*100:.1f}%)")
+    # --- STRATIFIED SUBSAMPLING (Fix 2A: Quick Config) ---
+    # MixedWM38 has 38 combinations. We take 50 samples per combination.
+    unique_rows, inverse_indices = np.unique(labels, axis=0, return_inverse=True)
+    print(f"[MixedDataset] Found {len(unique_rows)} unique defect combinations.")
+    
+    np.random.seed(seed)
+    sampled_indices = []
+    for i in range(len(unique_rows)):
+        comb_indices = np.where(inverse_indices == i)[0]
+        # Take min 50 samples per combination (or all if < 50)
+        n_to_sample = min(len(comb_indices), 50)
+        sampled_indices.extend(np.random.choice(comb_indices, n_to_sample, replace=False))
+    
+    sampled_indices = np.array(sampled_indices)
+    arrays = arrays[sampled_indices]
+    labels = labels[sampled_indices]
+    N = len(arrays)
+    print(f"[MixedDataset] Subsampled to {N:,} total samples for fast training.")
 
-    # Split sizes
+    # Split sizes (70/10/20)
     n_test = int(N * test_ratio)
     n_val  = int(N * val_ratio)
     n_train = N - n_test - n_val
