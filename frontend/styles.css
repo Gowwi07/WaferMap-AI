@@ -380,6 +380,31 @@ body {
 }
 .engine-tab:not(.active):hover { background: rgba(255,255,255,0.06); color: white; }
 
+/* ===== MODAL ===== */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.modal-overlay.active { opacity: 1; pointer-events: auto; }
+.modal-box {
+    width: 90%; max-width: 600px; padding: 2rem; border-radius: 16px;
+    transform: translateY(20px); transition: transform 0.3s;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+}
+.modal-overlay.active .modal-box { transform: translateY(0); }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+.modal-header h3 { font-family: var(--font-heading); font-size: 1.3rem; }
+.close-btn { background: none; border: none; font-size: 1.8rem; line-height: 1; color: var(--text-sec); cursor: pointer; transition: color 0.2s; }
+.close-btn:hover { color: var(--text-primary); }
+.explanation-step { display: flex; align-items: flex-start; margin-bottom: 1rem; }
+.explanation-step .step-number { font-family: var(--font-heading); font-weight: 800; font-size: 1.2rem; color: var(--primary-accent); opacity: 0.6; margin-right: 1rem; margin-top: -2px; }
+.explanation-step .step-text { color: var(--text-sec); font-size: 0.88rem; line-height: 1.5; }
+.explanation-step .step-text strong { display: block; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 2px; }
+.explanation-risk-badge { font-family: var(--font-heading); font-size: 1.8rem; font-weight: 800; line-height: 1; }
+.explanation-risk-badge sup { font-size: 0.8rem; opacity: 0.6; font-weight: 600; }
+
+
 /* KPI Cards */
 .kpi-grid {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;

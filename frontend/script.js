@@ -137,6 +137,17 @@ document.addEventListener("DOMContentLoaded", () => {
         explanationOverlay.classList.add("active");
     };
 
+    // Event delegation for risk-btn (data-* approach avoids quote issues in onclick)
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".risk-btn");
+        if (!btn) return;
+        const cls    = btn.dataset.cls;
+        const conf   = parseFloat(btn.dataset.conf);
+        const risk   = parseInt(btn.dataset.risk, 10);
+        const action = btn.dataset.action;
+        if (cls) window.showExplanation(cls, conf, risk, action);
+    });
+
     // ===== SAMPLE IMAGES =====
     const sampleGrid = document.getElementById("sampleGrid");
     const sampleClasses = ["center", "donut", "edge_loc", "edge_ring", "loc", "near_full", "random", "scratch", "none"];
@@ -421,7 +432,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="conf-bar-bg"><div class="conf-bar-fill" style="width: ${conf * 100}%"></div></div>
             </div>
             <div class="batch-risk">
-                <button class="risk-btn" onclick="showExplanation('${cls}', ${conf}, ${risk}, '${action}')">
+                <button class="risk-btn"
+                    data-cls="${cls}"
+                    data-conf="${conf}"
+                    data-risk="${risk}"
+                    data-action="${action}">
                     <span class="risk-value ${riskColorClass}">${risk}</span>
                     <span class="risk-denom">/ 100</span>
                     <span class="risk-hint">▸ CLICK FOR DETAILS</span>
