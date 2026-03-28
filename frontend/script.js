@@ -390,11 +390,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const confPct = (conf * 100).toFixed(1);
 
         const isOk = cls.toLowerCase() === "none";
-        const isStop = action === "STOP LOT" || action === "STOP";
+        const isStop = action === "STOP LINE" || action === "STOP LOT" || action === "STOP";
         const isWarn = action === "INVESTIGATE";
         const rowClass = isStop ? "row-danger" : (isWarn ? "row-warning" : "row-ok");
         const clsClass = isOk ? "cls-ok" : "cls-defect";
         const badgeClass = isStop ? "stop" : (isWarn ? "warn" : "ok");
+        const riskColorClass = risk < 30 ? "risk-low" : risk < 70 ? "risk-mid" : "risk-high";
 
         const camHTML = camUrl
             ? `<div class="batch-img-wrap"><img src="${camUrl}" alt="Grad-CAM" /><div class="img-label">Grad-CAM</div></div>`
@@ -421,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
             <div class="batch-risk">
                 <button class="risk-btn" onclick="showExplanation('${cls}', ${conf}, ${risk}, '${action}')">
-                    <span class="risk-value">${risk}</span>
+                    <span class="risk-value ${riskColorClass}">${risk}</span>
                     <span class="risk-denom">/ 100</span>
                     <span class="risk-hint">▸ CLICK FOR DETAILS</span>
                 </button>

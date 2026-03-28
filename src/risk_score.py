@@ -69,12 +69,12 @@ def calculate_risk_score(predicted_class, confidence, heatmap=None):
     
     # 4. Business Rules
     if score < 30:
-        action = "MONITOR"      # Green: Normal operation
+        action = "MONITOR"       # Green: Normal operation
     elif score < 70:
-        action = "INVESTIGATE"  # Yellow: Send engineer to check
+        action = "INVESTIGATE"   # Yellow: Send engineer to check
     else:
-        action = "STOP LINE"    # Red: Halt machine to prevent more bad wafers
-        
+        action = "STOP LOT"      # Red: Halt machine to prevent more bad wafers
+
     return score, action
 
 if __name__ == "__main__":
