@@ -54,6 +54,10 @@ async def predict(image: UploadFile = File(...)):
     # This prevents the Multi-Label model from falsely tagging clean wafers.
     if single_result["predicted_class"] == "None":
         single_result["mode"] = "single"
+        # Convert numpy overlay to base64-encoded PNG for JSON friendliness
+        if "gradcam_overlay" in single_result:
+             single_result["gradcam_png_base64"] = overlay_to_base64_png(single_result["gradcam_overlay"])
+             del single_result["gradcam_overlay"]
         return single_result
 
     # 3. If Single-Label model finds a defect, run Multi-Label (MixedWM38) as a second opinion.
@@ -68,4 +72,7 @@ async def predict(image: UploadFile = File(...)):
 
     # Default to Single Result
     single_result["mode"] = "single"
+    if "gradcam_overlay" in single_result:
+        single_result["gradcam_png_base64"] = overlay_to_base64_png(single_result["gradcam_overlay"])
+        del single_result["gradcam_overlay"]
     return single_result
