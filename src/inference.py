@@ -78,89 +78,123 @@ def unnormalize_image(tensor: torch.Tensor) -> np.ndarray:
 
 
 def is_wafer_map(pil_img: Image.Image) -> bool:
-    """Heuristic to detect if an image is a wafer map vs a natural photo.
-    Kept deliberately loose — better to classify a non-wafer than to refuse a real wafer.
+    """Heuristic: accept wafer maps AND real wafer photography.
+    Deliberately permissive — refuses only clearly invalid inputs.
     """
     w, h = pil_img.size
     aspect = w / float(h)
 
-    # Reject very non-square images (e.g. banner screenshots or A4 pages)
-    if aspect < 0.5 or aspect > 2.0:
+    # Reject very extreme aspect ratios (panoramas, A4 pages)
+    if aspect < 0.35 or aspect > 2.8:
         return False
 
     gray = np.array(pil_img.convert("L"))
 
-    # Reject images that are 95%+ a single exact pixel value (blank docs)
+    # Reject completely blank / single-colour images
     counts = np.bincount(gray.flatten())
     if len(counts) > 0:
         most_common_pct = counts.max() / counts.sum()
-        if most_common_pct > 0.95:
+        if most_common_pct > 0.98:
             return False
 
     return True
 
 def photo_to_wafer_array(pil_img: Image.Image) -> np.ndarray:
     """
-    Convert a real wafer photograph -> 52x52 int array (0, 1, 2).
-    Smart Bypass: If the image is already a 0/1/2 digital map, skip processing.
+    Convert a real wafer photograph (including oval/elliptical microscopy images)
+    -> 52x52 int array (0=background, 1=pass, 2=defect/fail).
+
+    Smart Bypass: If already a digital 0/1/2 map, just resize and remap.
+    Photo Path: CLAHE contrast enhancement -> ellipse-aware masking ->
+                Otsu + adaptive thresholding -> morphological cleanup.
     """
-    # 1. Check if it's already a digital map (3-5 unique colors max)
-    gray_full = np.array(pil_img.convert("L"))
+    img_np = np.array(pil_img.convert("RGB"))
+    gray_full = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     unique_vals = np.unique(gray_full)
-    
-    # If the image has very few unique colors, it's likely a pre-rendered map
-    # We just need to map it back to 0, 1, 2 and resize.
-    if len(unique_vals) <= 5:
+
+    # --- FAST PATH: already a digital map (very few distinct intensities) ---
+    if len(unique_vals) <= 8:
         gray_small = cv2.resize(gray_full, (52, 52), interpolation=cv2.INTER_NEAREST)
         result = np.zeros_like(gray_small, dtype=np.int32)
-        # Assuming typical 0=BG, 127=PASS, 255=FAIL mapping
-        result[gray_small > 50] = 1 # PASS
-        result[gray_small > 200] = 2 # FAIL
+        result[gray_small > 50]  = 1  # PASS / die
+        result[gray_small > 180] = 2  # FAIL / defect
         return result
 
-    # 2. Proceed with PHOTO quality cleaning (for real photographs)
-    img_np = np.array(pil_img.convert("RGB"))
-    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray_enhanced = clahe.apply(gray)
-    
-    blurred = cv2.GaussianBlur(gray_enhanced, (7, 7), 1.5)
-    circles = cv2.HoughCircles(
-        blurred, cv2.HOUGH_GRADIENT, 1, minDist=50,
-        param1=30, param2=20,
-        minRadius=int(min(gray.shape)*0.25), maxRadius=int(min(gray.shape)*0.75)
-    )
-    
-    mask = np.zeros_like(gray)
-    if circles is not None:
-        circles = np.uint16(np.around(circles))
-        x, y, r = circles[0][0]
-        cv2.circle(mask, (x, y), r, 255, -1)
-    else:
-        h, w = gray.shape
-        cv2.circle(mask, (w//2, h//2), int(min(h, w)*0.45), 255, -1)
+    # --- PHOTO PATH: real microscopy / SEM image ---
+    h_orig, w_orig = gray_full.shape
 
-    gray_small = cv2.resize(gray_enhanced, (52, 52), interpolation=cv2.INTER_AREA)
-    mask_small = cv2.resize(mask, (52, 52), interpolation=cv2.INTER_NEAREST)
-    
-    wafer_pixels = gray_small[mask_small > 0]
-    result = np.zeros_like(gray_small, dtype=np.int32)
-    
-    if len(wafer_pixels) > 0:
-        mean_val = wafer_pixels.mean()
-        std_val = wafer_pixels.std()
-        result[mask_small > 0] = 1 
-        threshold = mean_val - (1.5 * std_val)
-        result[(mask_small > 0) & (gray_small < threshold)] = 2
-        
-        # Clean up noise (Morphological Opening)
-        kernel = np.ones((2, 2), np.uint8)
-        defect_mask = (result == 2).astype(np.uint8)
-        defect_mask = cv2.morphologyEx(defect_mask, cv2.MORPH_OPEN, kernel)
-        result[mask_small > 0] = 1 
-        result[defect_mask > 0] = 2
-        
+    # 1. CLAHE for uniform illumination
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray_eq = clahe.apply(gray_full)
+
+    # 2. Build wafer boundary mask
+    #    Try HoughCircles first; fall back to fitted ellipse on Canny edges
+    mask = np.zeros((h_orig, w_orig), dtype=np.uint8)
+    blurred = cv2.GaussianBlur(gray_eq, (9, 9), 2)
+    circles = cv2.HoughCircles(
+        blurred, cv2.HOUGH_GRADIENT, dp=1, minDist=100,
+        param1=40, param2=25,
+        minRadius=int(min(h_orig, w_orig) * 0.28),
+        maxRadius=int(min(h_orig, w_orig) * 0.72)
+    )
+    if circles is not None:
+        cx, cy, cr = np.uint16(np.around(circles[0][0]))
+        cv2.ellipse(mask, (int(cx), int(cy)), (int(cr), int(cr*0.85)),
+                    0, 0, 360, 255, -1)
+    else:
+        # Otsu threshold to find wafer blob, then fit ellipse
+        _, bw = cv2.threshold(gray_eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # The wafer is typically the large bright oval — find largest contour
+        contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            if len(largest) >= 5:
+                ellipse = cv2.fitEllipse(largest)
+                cv2.ellipse(mask, ellipse, 255, -1)
+            else:
+                cv2.drawContours(mask, [largest], -1, 255, -1)
+        else:
+            # Last resort: centre crop assuming ~85% fill
+            cy2, cx2 = h_orig // 2, w_orig // 2
+            cv2.ellipse(mask, (cx2, cy2),
+                        (int(w_orig * 0.44), int(h_orig * 0.44)), 0, 0, 360, 255, -1)
+
+    # 3. Detect defects inside the wafer mask
+    #    Dark spots on a beige/grey background == defects (value=2)
+    #    Strategy: adaptive threshold to find dark clusters
+    inside = cv2.bitwise_and(gray_eq, gray_eq, mask=mask)
+    wafer_pixels = gray_eq[mask > 0]
+    if len(wafer_pixels) == 0:
+        return np.zeros((52, 52), dtype=np.int32)
+
+    mean_v = float(wafer_pixels.mean())
+    std_v  = float(wafer_pixels.std())
+
+    # Primary: Otsu on just the wafer region
+    _, otsu_map = cv2.threshold(inside, 0, 255,
+                                cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # Secondary: fixed std-based threshold (catches subtle defects)
+    std_thresh = max(20, mean_v - 1.8 * std_v)
+    std_map = np.where((gray_eq < std_thresh) & (mask > 0),
+                       255, 0).astype(np.uint8)
+
+    # Combine both defect maps
+    defect_raw = cv2.bitwise_or(otsu_map, std_map)
+    defect_raw = cv2.bitwise_and(defect_raw, defect_raw, mask=mask)
+
+    # 4. Morphological cleanup — remove single-pixel salt noise
+    kernel3 = np.ones((3, 3), np.uint8)
+    defect_clean = cv2.morphologyEx(defect_raw, cv2.MORPH_OPEN,  np.ones((2,2), np.uint8))
+    defect_clean = cv2.morphologyEx(defect_clean, cv2.MORPH_CLOSE, kernel3)
+
+    # 5. Build 52×52 result array
+    mask_s   = cv2.resize(mask,        (52, 52), interpolation=cv2.INTER_NEAREST)
+    defect_s = cv2.resize(defect_clean,(52, 52), interpolation=cv2.INTER_NEAREST)
+
+    result = np.zeros((52, 52), dtype=np.int32)
+    result[mask_s > 0]   = 1  # all inside-wafer pixels = PASS
+    result[defect_s > 0] = 2  # detected dark clusters = DEFECT
+
     return result
 
 def wafer_array_to_pil(arr: np.ndarray) -> Image.Image:
