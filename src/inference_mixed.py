@@ -3,9 +3,8 @@ src/inference_mixed.py
 ======================
 Inference utilities for the multi-label FastAPI endpoint (/predict_multi).
 
-Supports two input modes (Option B):
-  1. 52×52 numpy arrays from .npz files
-  2. Real wafer photographs (converted to binary map via adaptive thresholding)
+Critical fix: same as inference.py — do full-res binary segmentation at input
+resolution, then resize to 224 via NEAREST, matching dataset_mixed.py training.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from src.dataset_mixed import MIXED_TRANSFORM, MIXED_CLASS_NAMES, NUM_MIXED_CLAS
 from src.model import build_model
 from src.gradcam import GradCAM, overlay_heatmap
 
-THRESHOLD = 0.5  # Sigmoid threshold — above this = defect detected
+THRESHOLD = 0.5  # Sigmoid threshold
 
 
 @dataclass
@@ -36,7 +35,6 @@ class MixedInferenceAssets:
 
 
 def load_mixed_assets() -> MixedInferenceAssets | None:
-    """Load the trained multi-label model once at server startup."""
     if not os.path.exists(MODEL_PATH):
         print(f"[InferenceMixed] Model not found at {MODEL_PATH}")
         return None
@@ -53,119 +51,102 @@ def load_mixed_assets() -> MixedInferenceAssets | None:
     return MixedInferenceAssets(model=model, cam=cam, device=device)
 
 
-def photo_to_wafer_array(pil_img: Image.Image) -> np.ndarray:
+def _is_digital_map(gray: np.ndarray) -> bool:
+    return len(np.unique(gray)) <= 10
+
+
+def photo_to_model_input_mixed(pil_img: Image.Image) -> Image.Image:
     """
-    Convert a real wafer photograph (including oval/elliptical microscopy images)
-    -> 52x52 int array (0=background, 1=pass, 2=defect/fail).
-
-    Smart Bypass: Already a digital 0/1/2 map -> just resize and remap.
-    Photo Path: CLAHE -> ellipse-aware masking -> Otsu + std thresholding -> morph cleanup.
+    Convert ANY wafer image into the PIL format the multi-label model expects,
+    matching dataset_mixed.py training: grayscale encoded 0/127/255 → RGB 224×224.
     """
-    img_np   = np.array(pil_img.convert("RGB"))
-    gray_full = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    unique_vals = np.unique(gray_full)
+    img_np = np.array(pil_img.convert("RGB"))
+    gray   = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    h, w   = gray.shape
 
-    # --- FAST PATH: already a digital map ---
-    if len(unique_vals) <= 8:
-        gray_small = cv2.resize(gray_full, (52, 52), interpolation=cv2.INTER_NEAREST)
-        result = np.zeros_like(gray_small, dtype=np.int32)
-        result[gray_small > 60]  = 1  # Pass
-        result[gray_small > 180] = 2  # Fail
-        return result
+    # ─── FAST PATH: already a digital map ─────────────────────────────────────
+    if _is_digital_map(gray):
+        out = np.zeros_like(gray, dtype=np.uint8)
+        out[gray > 60]  = 127
+        out[gray > 180] = 255
+        pil_out = Image.fromarray(out, "L").resize((224, 224), Image.NEAREST)
+        return pil_out.convert("RGB")
 
-    # --- PHOTO PATH ---
-    h_orig, w_orig = gray_full.shape
+    # ─── PHOTO PATH ───────────────────────────────────────────────────────────
+    clahe  = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray_e = clahe.apply(gray)
 
-    clahe   = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    gray_eq = clahe.apply(gray_full)
-
-    mask    = np.zeros((h_orig, w_orig), dtype=np.uint8)
-    blurred = cv2.GaussianBlur(gray_eq, (9, 9), 2)
+    mask = np.zeros((h, w), dtype=np.uint8)
+    blur = cv2.GaussianBlur(gray_e, (9, 9), 2)
     circles = cv2.HoughCircles(
-        blurred, cv2.HOUGH_GRADIENT, dp=1, minDist=100,
+        blur, cv2.HOUGH_GRADIENT, dp=1, minDist=100,
         param1=40, param2=25,
-        minRadius=int(min(h_orig, w_orig) * 0.28),
-        maxRadius=int(min(h_orig, w_orig) * 0.72)
+        minRadius=int(min(h, w) * 0.28),
+        maxRadius=int(min(h, w) * 0.72)
     )
     if circles is not None:
         cx, cy, cr = np.uint16(np.around(circles[0][0]))
-        cv2.ellipse(mask, (int(cx), int(cy)), (int(cr), int(cr * 0.85)),
-                    0, 0, 360, 255, -1)
+        cv2.ellipse(mask, (int(cx), int(cy)),
+                    (int(cr * 0.92), int(cr * 0.78)), 0, 0, 360, 255, -1)
     else:
-        _, bw = cv2.threshold(gray_eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            largest = max(contours, key=cv2.contourArea)
+        _, bw = cv2.threshold(gray_e, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        cnts, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts:
+            largest = max(cnts, key=cv2.contourArea)
             if len(largest) >= 5:
                 cv2.ellipse(mask, cv2.fitEllipse(largest), 255, -1)
             else:
                 cv2.drawContours(mask, [largest], -1, 255, -1)
         else:
-            cy2, cx2 = h_orig // 2, w_orig // 2
-            cv2.ellipse(mask, (cx2, cy2),
-                        (int(w_orig * 0.44), int(h_orig * 0.44)), 0, 0, 360, 255, -1)
+            cv2.ellipse(mask, (w // 2, h // 2),
+                        (int(w * 0.44), int(h * 0.44)), 0, 0, 360, 255, -1)
 
-    wafer_pixels = gray_eq[mask > 0]
-    if len(wafer_pixels) == 0:
-        return np.zeros((52, 52), dtype=np.int32)
+    wafer_px = gray_e[mask > 0]
+    if len(wafer_px) == 0:
+        blank = Image.fromarray(np.zeros((224, 224), dtype=np.uint8), "L")
+        return blank.convert("RGB")
 
-    mean_v = float(wafer_pixels.mean())
-    std_v  = float(wafer_pixels.std())
+    mean_v = float(wafer_px.mean())
+    std_v  = float(wafer_px.std())
 
-    inside     = cv2.bitwise_and(gray_eq, gray_eq, mask=mask)
-    _, otsu_map = cv2.threshold(inside, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    std_thresh  = max(20, mean_v - 1.8 * std_v)
-    std_map     = np.where((gray_eq < std_thresh) & (mask > 0), 255, 0).astype(np.uint8)
+    roi = cv2.bitwise_and(gray_e, gray_e, mask=mask)
+    _, otsu = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    t2      = max(15, mean_v - 2.0 * std_v)
+    std_map = np.where((gray_e < t2) & (mask > 0), 255, 0).astype(np.uint8)
 
-    defect_raw   = cv2.bitwise_or(otsu_map, std_map)
-    defect_raw   = cv2.bitwise_and(defect_raw, defect_raw, mask=mask)
-    defect_clean = cv2.morphologyEx(defect_raw, cv2.MORPH_OPEN,  np.ones((2, 2), np.uint8))
-    defect_clean = cv2.morphologyEx(defect_clean, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    defect_raw = cv2.bitwise_or(otsu, std_map)
+    defect_raw = cv2.bitwise_and(defect_raw, defect_raw, mask=mask)
+    defect = cv2.morphologyEx(defect_raw, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
+    defect = cv2.morphologyEx(defect,     cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
-    mask_s   = cv2.resize(mask,         (52, 52), interpolation=cv2.INTER_NEAREST)
-    defect_s = cv2.resize(defect_clean, (52, 52), interpolation=cv2.INTER_NEAREST)
+    out = np.zeros((h, w), dtype=np.uint8)
+    out[mask > 0]   = 127
+    out[defect > 0] = 255
 
-    result = np.zeros((52, 52), dtype=np.int32)
-    result[mask_s > 0]   = 1
-    result[defect_s > 0] = 2
-    return result
-
-
+    pil_out = Image.fromarray(out, "L").resize((224, 224), Image.NEAREST)
+    return pil_out.convert("RGB")
 
 
 def run_mixed_inference(assets: MixedInferenceAssets, pil: Image.Image) -> dict:
-    """
-    Full multi-label inference pipeline.
-    Works with both real photos and wafer array images.
-    """
-    pil_rgb = pil.convert("RGB")
+    """Full multi-label inference pipeline."""
+    pil_model_input = photo_to_model_input_mixed(pil.convert("RGB"))
 
-    # Convert to 52×52 array representation
-    wafer_array = photo_to_wafer_array(pil_rgb)
-
-    # Convert array back to grayscale PIL for the model transform
-    pil_gray = wafer_array_to_pil(wafer_array)
-    img_tensor = MIXED_TRANSFORM(pil_gray)
+    img_tensor = MIXED_TRANSFORM(pil_model_input)
     img_batch  = img_tensor.unsqueeze(0).to(assets.device)
 
-    # Run Grad-CAM (using class=0 for the heatmap; we'll summarize across all)
     with torch.no_grad():
-        logits = assets.model(img_batch)    # (1, 8) raw logits
-        probs  = torch.sigmoid(logits)[0].cpu().numpy()  # (8,) probabilities
+        logits = assets.model(img_batch)
+        probs  = torch.sigmoid(logits)[0].cpu().numpy()
 
-    # Multi-label prediction: all classes above threshold
     predicted_indices = [i for i, p in enumerate(probs) if p >= THRESHOLD]
     detected_defects  = [MIXED_CLASS_NAMES[i] for i in predicted_indices]
 
-    # Generate Grad-CAM for the highest-confidence detected defect
     gradcam_overlay_b64 = None
     if predicted_indices:
         best_class = int(np.argmax(probs))
         heatmap, _, _ = assets.cam(img_batch, class_idx=best_class)
-        # Resize background to match heatmap size (224x224) for safe blending
-        img_rgb_np = np.array(pil_gray.resize((224, 224)).convert("RGB")) / 255.0
+        img_rgb_np = np.array(pil_model_input.resize((224, 224))) / 255.0
         overlay = overlay_heatmap(img_rgb_np, heatmap)
-        # Encode overlay as base64
         if overlay.max() <= 1.0:
             overlay_uint8 = (overlay * 255).astype(np.uint8)
         else:

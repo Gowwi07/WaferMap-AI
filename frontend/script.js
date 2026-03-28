@@ -1116,59 +1116,65 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    let chartsBuilt = false;
+    let singleBuilt = false;
+    let mixedBuilt  = false;
 
-    function buildMetricsCharts() {
-        if (chartsBuilt) return;
-        chartsBuilt = true;
 
-        // -- Single F1 bar --
+    function buildSingleCharts() {
+        if (singleBuilt) return;
+        singleBuilt = true;
+
         const singleClasses = Object.keys(SINGLE_METRICS.per_class);
         const singleF1s = singleClasses.map(c => SINGLE_METRICS.per_class[c].f1);
         makeBarChart('singleF1Chart', singleClasses, singleF1s, 'F1 Score', f1Color);
 
-        // -- Single Acc line --
         makeLineChart('singleAccChart', 10, [
             { label: 'Train Accuracy', data: SINGLE_METRICS.train_acc, borderColor: 'hsl(250,90%,65%)', backgroundColor: 'hsla(250,90%,65%,0.1)', tension: 0.4, fill: true, pointRadius: 3 },
             { label: 'Val Accuracy',   data: SINGLE_METRICS.val_acc,   borderColor: '#2ecc71',           backgroundColor: 'rgba(46,204,113,0.1)',   tension: 0.4, fill: true, pointRadius: 3 }
         ]);
 
-        // -- Mixed F1 bar --
+        fillMetricsTable('singleMetricsTable', SINGLE_METRICS.per_class);
+    }
+
+    function buildMixedCharts() {
+        if (mixedBuilt) return;
+        mixedBuilt = true;
+
         const mixedClasses = Object.keys(MIXED_METRICS.per_class);
         const mixedF1s = mixedClasses.map(c => MIXED_METRICS.per_class[c].f1);
         makeBarChart('mixedF1Chart', mixedClasses, mixedF1s, 'F1 Score', f1Color);
 
-        // -- Mixed val F1 + hamming line --
         makeLineChart('mixedValChart', 10, [
-            { label: 'Val F1',         data: MIXED_METRICS.val_f1,      borderColor: '#2ecc71',           backgroundColor: 'rgba(46,204,113,0.1)',   tension: 0.4, fill: true, pointRadius: 3 },
-            { label: 'Hamming Loss',   data: MIXED_METRICS.val_hamming,  borderColor: '#e74c3c',           backgroundColor: 'rgba(231,76,60,0.1)',    tension: 0.4, fill: false, pointRadius: 3, borderDash: [4,3] }
+            { label: 'Val F1 (Multi-Label)',  data: MIXED_METRICS.val_f1,     borderColor: '#2ecc71',  backgroundColor: 'rgba(46,204,113,0.1)', tension: 0.4, fill: true,  pointRadius: 3 },
+            { label: 'Hamming Loss (↓ better)', data: MIXED_METRICS.val_hamming, borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)',  tension: 0.4, fill: false, pointRadius: 3, borderDash: [4, 3] }
         ]);
 
-        // -- Tables --
-        fillMetricsTable('singleMetricsTable', SINGLE_METRICS.per_class);
         fillMetricsTable('mixedMetricsTable', MIXED_METRICS.per_class);
     }
 
-    // Engine switcher
+    // Engine switcher — also triggers lazy chart build for whichever panel becomes visible
     document.querySelectorAll('.engine-tab').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.engine-tab').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const eng = btn.dataset.engine;
-            document.getElementById('metrics-single').style.display = eng === 'single' ? '' : 'none';
-            document.getElementById('metrics-mixed').style.display  = eng === 'mixed'  ? '' : 'none';
+            const singlePanel = document.getElementById('metrics-single');
+            const mixedPanel  = document.getElementById('metrics-mixed');
+            singlePanel.style.display = eng === 'single' ? '' : 'none';
+            mixedPanel.style.display  = eng === 'mixed'  ? '' : 'none';
+            // Build charts only now — canvas is visible so Chart.js can measure dimensions
+            if (eng === 'single') buildSingleCharts();
+            if (eng === 'mixed')  buildMixedCharts();
         });
     });
 
-    // Build charts when tab is first opened
-    const origTabClick = (link) => {
-        if (link.dataset.target === 'tab-metrics') buildMetricsCharts();
-    };
+    // Build single charts when Performance tab is first opened
     document.querySelectorAll('.tab-link').forEach(link => {
-        link.addEventListener('click', () => origTabClick(link));
+        link.addEventListener('click', () => {
+            if (link.dataset.target === 'tab-metrics') buildSingleCharts();
+        });
     });
 
     // ===== INIT =====
     updateHistoryBadge();
 });
-

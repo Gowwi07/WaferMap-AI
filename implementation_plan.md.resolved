@@ -1,0 +1,62 @@
+# Implementation Plan: Complete "6 Fixes" Overhaul
+
+This plan outlines the systematic implementation of the 6-point fix strategy to resolve classification biases (especially for Donut and Near-Full classes) and ensure robust multi-label detection for mixed defects.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Retraining Requirement**: This plan involves deleting all existing `.pth` files and performing a fresh 30-epoch training run for the single-label model. This will improve accuracy but will take time (approx. 1-2 hours on a GPU).
+> 
+> **Model Names**: To avoid confusion, the saved models will be renamed to exactly `wafer_model.pth` (Single) and `mixed_model.pth` (Mixed).
+
+## Proposed Changes
+
+### Fix 1: Single-Label Training (`colab_training.py` & `src/train.py`)
+- **Quick Config**: 10 Epochs, **1e-4 Learning Rate** (conservative), 32 Batch Size.
+- **Balanced Subsampling**: Take MIN(500, all) samples per class. This ensures rare classes like Near-Full (149) get their full representation instead of just 4 samples.
+- **Addition A**: Implementation of precise class weights in `CrossEntropyLoss`.
+- **Addition B**: Integration of `WeightedRandomSampler` into the `DataLoader`.
+- **Addition C**: Enabling `label_smoothing=0.1`.
+
+### Fix 2: Multi-Label Training (`src/train_mixed.py`)
+- **Quick Config**: 10 Epochs.
+- **Subsampling**: 50 samples per combination type (min 20 to maintain `pos_weight` stability).
+- **Change A**: Strictly enforce 8-element binary float vectors for multi-label targets.
+- **Change B**: Use `BCEWithLogitsLoss` with `pos_weight`. Ensure raw logits (no softmax).
+
+### Fix 3: Data Loading & Augmentation (`src/dataset.py`)
+- **Label Mapping**: Comprehensive case-fix ('Near-Full'/'Near-full', 'None'/'none').
+- **Image Conversion**: Strict 0/1/2 -> Black/Gray/White mapping.
+- **Augmentation (Training Only)**:
+  - Minority Classes: `RandomHorizontalFlip`, `RandomVerticalFlip`, `RandomRotation(90)`.
+  - **No** ColorJitter, Blur, or Erasing (preserves binary structure).
+
+### Fix 4: Model Separation (`src/model.py`)
+- Ensure two distinct `.pth` filenames and clarify that the single-label model uses 9 outputs while the mixed model uses 8.
+
+### Fix 5: Inference Logic (`src/inference_mixed.py`)
+- Update `inference_mixed.py` to independently threshold all 8 classes at 0.5.
+- Ensure the API returns a list of *all* detected defects, not just the highest probability one.
+
+### Fix 6: Execution & Retraining Sequence
+1.  **Cleanup**: Delete all existing `.pth` files.
+2.  **Single-Label Train**: Run `colab_training.py` (30 epochs) -> `wafer_model.pth`.
+3.  **Single-Label Verify**: Run diagnostic tests on all 9 classes.
+4.  **Mixed-Label Train**: Run `train_mixed.py` -> `mixed_model.pth`.
+5.  **Mixed-Label Verify**: Test combination defect types.
+
+---
+
+## Open Questions
+- Do you have any preference for the augmentation strategy (Rotation vs Flipping) specifically for the Near-Full class, or should I apply standard transforms to all minority classes?
+
+## Verification Plan
+
+### Automated Tests
+- Run `src/diagnostic.py` and `src/diagnostic_mixed.py`.
+- **Precision Check**: Test one known sample per class.
+- **Image Audit**: Manually verify that `samples_wm811k/*.png` files have sufficient contrast for the `photo_to_wafer_array` cleaning logic to work without zero-ing out the map.
+
+### Manual Verification
+- Test "Donut" and "Near-Full" digital maps to ensure they no longer classify as "Random".
+- Test "Donut + Scratch" images to confirm both labels are returned.
