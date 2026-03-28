@@ -46,33 +46,39 @@ async def predict(image: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Couln't open image: {e}")
 
     # 1. Run Single-Label model FIRST (Expert in 'None/Clean' and real photos)
-    single_result = run_inference_with_gradcam(ASSETS, pil)
-    if "error" in single_result:
-        raise HTTPException(status_code=422, detail=single_result["error"])
+    single_res = run_inference_with_gradcam(ASSETS, pil)
+    if "error" in single_res:
+        raise HTTPException(status_code=422, detail=single_res["error"])
 
     # 2. If Single-Label model says "None" (Clean), return immediately. 
-    # This prevents the Multi-Label model from falsely tagging clean wafers.
-    if single_result["predicted_class"] == "None":
-        single_result["mode"] = "single"
-        # Convert numpy overlay to base64-encoded PNG for JSON friendliness
-        if "gradcam_overlay" in single_result:
-             single_result["gradcam_png_base64"] = overlay_to_base64_png(single_result["gradcam_overlay"])
-             del single_result["gradcam_overlay"]
-        return single_result
+    if single_res["predicted_class"] == "None":
+        return {
+            "mode": "single",
+            "class": "Clean",   # User-friendly name
+            "confidence": single_res["confidence"],
+            "class_probabilities": single_res["class_probabilities"],
+            "risk_score": single_res["risk_score"],
+            "action": single_res["action"],
+            "gradcam_png_base64": overlay_to_base64_png(single_res["gradcam_overlay"]) 
+                                  if "gradcam_overlay" in single_res else None,
+        }
 
-    # 3. If Single-Label model finds a defect, run Multi-Label (MixedWM38) as a second opinion.
-    # It checks if there are other defects hidden in the same image.
-    multi_result = run_mixed_inference(MIXED_ASSETS, pil)
+    # 3. If Single-Label finds a defect, run Multi-Label (MixedWM38)
+    multi_res = run_mixed_inference(MIXED_ASSETS, pil)
     
     # Trust Multi-Label result ONLY if it finds multiple defects (>= 2).
-    # If it only finds 1, we stick with the highly-accurate Single-Label model.
-    if multi_result.get("defect_count", 0) >= 2:
-        multi_result["mode"] = "multi"
-        return multi_result
+    if multi_res.get("defect_count", 0) >= 2:
+        multi_res["mode"] = "multi"
+        return multi_res
 
     # Default to Single Result
-    single_result["mode"] = "single"
-    if "gradcam_overlay" in single_result:
-        single_result["gradcam_png_base64"] = overlay_to_base64_png(single_result["gradcam_overlay"])
-        del single_result["gradcam_overlay"]
-    return single_result
+    return {
+        "mode": "single",
+        "class": single_res["predicted_class"],
+        "confidence": single_res["confidence"],
+        "class_probabilities": single_res["class_probabilities"],
+        "risk_score": single_res["risk_score"],
+        "action": single_res["action"],
+        "gradcam_png_base64": overlay_to_base64_png(single_res["gradcam_overlay"]) 
+                              if "gradcam_overlay" in single_res else None,
+    }
